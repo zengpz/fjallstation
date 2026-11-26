@@ -2,7 +2,7 @@
 
 *"Fjällstation is the mountain station at the foot of Kebnekaise, where you prepare before the climb."*
 
-A data and RL environment API for LLM agents in the built environment.
+A data and RL environment API for LLM training in the built environment.
 
 ## What you get
 
