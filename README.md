@@ -1,8 +1,8 @@
 # Fjällstation
 
-A tool kit to train LLM agents for the built environment: data loaders, a task environment and a reward server.
+*"Fjällstation is the mountain station at the foot of Kebnekaise, where you prepare before the climb."*
 
-Fjällstation is the mountain station at the foot of Kebnekaise, where you prepare before the climb. This project is the station: it gives the tools and the tasks, and the training is yours.
+A tool kit to train LLM agents for the built environment: data loaders, a task environment and a reward server. This project is the station: it gives the tools and the tasks, and the training is yours.
 
 ## What you get
 
