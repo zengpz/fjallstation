@@ -142,7 +142,19 @@ def read_regular(path: str, limit: int, head: bool = False):
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or (info.st_size > limit and not head):
             return None
-        data = os.read(fd, limit) if head else b"".join(iter(lambda: os.read(fd, 1 << 20), b""))
+        if head:
+            data = os.read(fd, limit)
+        else:
+            blocks, size = [], 0
+            while size <= limit:                                  # the file can grow after the look at its size
+                block = os.read(fd, 1 << 20)
+                if not block:
+                    break
+                blocks.append(block)
+                size += len(block)
+            if size > limit:
+                return None
+            data = b"".join(blocks)
     finally:
         os.close(fd)
     return data.decode("utf-8", errors="replace")

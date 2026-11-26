@@ -31,7 +31,7 @@ curl -s -X POST "$(python3 -c 'import json; print(json.load(open("result.json"))
 | `nekaise-task start` and `submit` | root | the library folder and the kept task file; Python runs in isolated mode, so it reads no start-up file of the agent |
 | the submitted model (compilation and simulation) | 65534 | a folder of its own; a model that runs a shell command has no rights of root or of the agent |
 
-Stop the processes of the agent before the submission. The container is the outer boundary: an episode mounts no folder of the host.
+Stop the processes of the agent before the submission. The container is the outer boundary: an episode mounts no folder of the host. `nekaise.Env()` gives the container limits for CPU, memory and the number of processes. It gives no limit for the disk.
 
 ## The server
 
