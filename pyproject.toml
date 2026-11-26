@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
+authors = [{ name = "Zeng Peng" }]
 keywords = ["llm", "agents", "reinforcement-learning", "modelica", "hvac", "building-energy"]
 classifiers = [
     "Development Status :: 3 - Alpha",
