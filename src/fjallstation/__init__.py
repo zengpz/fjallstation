@@ -1,4 +1,4 @@
-"""fjallstation: a data and RL environment API for LLM training in the built environment.
+"""fjallstation distributes data and RL environments for large-scale LLM training in the built environment.
 
     import fjallstation
 
@@ -14,4 +14,4 @@ from fjallstation.data import Corpus, Instruct
 from fjallstation.env import Env
 
 __all__ = ["Corpus", "Instruct", "Env"]
-__version__ = "0.1.2"
+__version__ = "0.1.3"
