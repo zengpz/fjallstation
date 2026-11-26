@@ -1,0 +1,256 @@
+import json
+import threading
+import urllib.request
+
+import pyarrow as pa
+import pyarrow.parquet as pq
+import pytest
+
+import nekaise
+from nekaise import env as client
+from nekaise import score
+from nekaise import server as app
+
+SPEC = {"model_name": "Room", "msl": "4.1.0", "libraries": ["Buildings 13.0.0"],
+        "eval": {"start_time": 0, "stop_time": 10, "interval": 5, "tolerance": 1e-6, "outputs": ["T"]},
+        "hidden_files": ["/opt/omlibrary/Buildings 13.0.0/Fluid/Examples/Room.mo", "/opt/omlibrary/Buildings 13.0.0/Resources/x y.txt"],
+        "hidden_classes": ["Buildings.Fluid.Examples.Room"], "forbidden": ["Fluid.Examples.Room"]}
+REF = {"time": [0.0, 5.0, 10.0], "T": [20.0, 21.0, 22.0]}
+
+
+@pytest.fixture
+def server(tmp_path):
+    rows = [{"id": f"t-{i}", "prompt": f"Build room {i}.", "model_name": "Room", "spec": json.dumps(SPEC), "reference_code": "hidden",
+             "reference_outputs": json.dumps(REF), "source_id": f"bldg-room-{i}"} for i in range(3)]
+    (tmp_path / "store/env/tasks").mkdir(parents=True)
+    pq.write_table(pa.Table.from_pylist(rows), tmp_path / "store/env/tasks/part-00000.parquet")
+    station = app.Station(app.load_tasks(tmp_path / "store"), tmp_path / "data", seed=0)
+    httpd = app.serve(station, port=0)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}", tmp_path / "data"
+    httpd.shutdown()
+
+
+@pytest.fixture
+def docker(monkeypatch):
+    """A stand-in for docker: no container is started. `start` keeps the task file; `submit` answers as the image does."""
+    calls, state = [], {}
+
+    def run(command, input=None, **kw):
+        calls.append(command)
+
+        class Done:
+            returncode, stdout, stderr = 0, "OpenModelica 1.27.0\n", ""
+        if command[-2:] == ["nekaise-task", "start"]:
+            state["task"] = json.loads(input)
+        if command[-2:] == ["nekaise-task", "submit"]:
+            task, code = state["task"], input
+            status = ("no model" if not code.strip() else "uses the source example" if "Fluid.Examples.Room" in code else
+                      "did not load" if "broken" in code else "check failed" if "unchecked" in code else "simulated")
+            values = {} if status != "simulated" else {"T": REF["T"] if "right" in code else [20.0, 25.0, 30.0]}
+            Done.stdout = json.dumps({"ticket": task["ticket"], "address": task["address"], "task": task["task"], "image": state.get("image", task["image"]),
+                                      "status": status, "omc_reward": score.OMC_REWARD[status], "values": values, "seconds": 1.0})
+        return Done()
+
+    monkeypatch.setattr(client.subprocess, "run", run)
+    return calls, state
+
+
+def test_a_task_a_container_and_the_reward_in_two_parts(server, docker):
+    (url, data), (calls, state) = server, docker
+    env = nekaise.Env(url)
+    task = env.reset()
+    assert task.prompt.startswith("Build room") and task.model_name == "Room" and task.container.startswith("nekaise-env-")
+    run, start = calls[0], calls[1]
+    assert run[:2] == ["docker", "run"] and run[run.index("--network") + 1] == "none" and "nekaise-env:1" in run
+    assert run[run.index("--user") + 1] == "1000:1000" and run[run.index("--pids-limit") + 1] == "512"       # the agent is never root
+    assert start == ["docker", "exec", "-i", "-u", "0", task.container, "nekaise-task", "start"]           # the image hides the files, as root
+    task_file = state["task"]
+    assert task_file["hidden_files"] == SPEC["hidden_files"] and task_file["address"] == url + "/v1/results" and len(task_file["ticket"]) == 24
+    assert task_file["run"] == score.run_part(SPEC)
+    assert env.exec("omc --version", timeout=90, max_output=5000).output.startswith("OpenModelica") and "-u" not in calls[2]
+    assert calls[2][-6:] == ["-c", client.RUN, "nekaise", "90", "omc --version", "5000"]       # time limit and output limit in the container
+    result = env.step("model Room right end Room;")
+    assert result == client.Result(reward=1.0, feedback="correct", omc=0.3, scorer=1.0)
+    assert calls[3][-2:] == ["nekaise-task", "submit"] and calls[3][3:5] == ["-u", "0"]
+    assert calls[-1][:3] == ["docker", "rm", "-f"] and env.task is None and env.result_file is None       # the container is removed
+    record = json.loads((data / "rewards.jsonl").read_text().splitlines()[0])
+    assert record["reward"] == 1.0 and record["omc_reward"] == 0.3 and record["task"] == task.id and record["outputs"] == {"T": 0.0}
+    assert record["source_id"].startswith("bldg-room") and record["container_seconds"] == 1.0 and record["server_milliseconds"] < 1000
+
+
+def test_each_stage_has_its_reward_and_a_short_status(server, docker):
+    url = server[0]
+    env = nekaise.Env(url)
+    env.reset("t-1")
+    assert env.step("model Room end Room;") == client.Result(0.3, "outputs differ", omc=0.3, scorer=0.0)       # it simulates
+    env.reset("t-1")
+    assert env.step("model Room unchecked end Room;") == client.Result(0.1, "check failed", omc=0.1, scorer=0.0)   # it loads
+    env.reset("t-1")
+    assert env.step("model Room broken end Room;") == client.Result(0.0, "did not load", omc=0.0, scorer=0.0)
+    env.reset("t-1")
+    assert env.step("model Room extends Buildings.Fluid.Examples.Room; end Room;").feedback == "uses the source example"
+    env.reset("t-1")
+    assert env.step("") == client.Result(0.0, "no model", omc=0.0, scorer=0.0)
+
+
+def test_one_result_for_each_ticket_and_clear_errors(server, docker):
+    url = server[0]
+    env = nekaise.Env(url)
+    env.reset()
+    env.step("model Room right end Room;")
+    used = {"ticket": docker[1]["task"]["ticket"], "image": "nekaise-env:1", "status": "simulated", "values": {"T": REF["T"]}}
+    again = client.post(url + "/v1/results", used)                # the same result again: the same answer, and no second record
+    assert again["reward"] == 1.0 and again["status"] == "correct" and len((server[1] / "rewards.jsonl").read_text().splitlines()) == 1
+    with pytest.raises(RuntimeError, match="409.*result already"):
+        client.post(url + "/v1/results", {**used, "values": {"T": [0.0, 0.0, 0.0]}})
+    with pytest.raises(RuntimeError, match="404"):
+        client.post(url + "/v1/results", {**used, "ticket": "not-a-ticket"})
+    with pytest.raises(RuntimeError, match="404"):
+        env.reset("t-not-there")
+    with pytest.raises(RuntimeError, match="reset"):
+        env.step("model Room end Room;")
+    with pytest.raises(RuntimeError, match="step"):
+        env.send()
+    with pytest.raises(ConnectionError):
+        nekaise.Env("http://127.0.0.1:9").reset()
+
+
+def test_the_answers_of_the_server_hold_no_reference_and_no_error_number(server, docker):
+    url = server[0]
+    env = nekaise.Env(url)
+    task_file = env._post("/v1/tasks/sample", {})
+    assert set(task_file) == {"ticket", "address", "task", "prompt", "model_name", "image", "hidden_files", "run"}
+    assert "limit" not in task_file["run"] and "reference" not in json.dumps(task_file)
+    done = client.post(task_file["address"], {"ticket": task_file["ticket"], "image": task_file["image"], "status": "simulated", "values": {"T": [20.0, 25.0, 30.0]}})
+    assert done == {"reward": 0.0, "omc_reward": 0.3, "status": "outputs differ", "task": task_file["task"], "image": "nekaise-env:1"}
+
+
+def test_a_result_of_another_image_version_is_refused_and_does_not_use_up_the_ticket(server, docker):
+    (url, data), (calls, state) = server, docker
+    env = nekaise.Env(url)
+    env.reset()
+    state["image"] = "nekaise-env:0"
+    with pytest.raises(RuntimeError, match="409.*needs nekaise-env:1"):
+        env.step("model Room right end Room;")
+    assert not (data / "rewards.jsonl").exists() and env.result_file is not None
+    env.result_file["image"] = "nekaise-env:1"
+    assert env.send().reward == 1.0
+
+
+def test_a_fault_of_the_server_gives_no_reward_and_the_client_keeps_the_result(server, docker, monkeypatch):
+    url, data = server
+    env = nekaise.Env(url)
+    env.reset()
+    real = score.score
+    monkeypatch.setattr(score, "score", lambda *a: (_ for _ in ()).throw(OSError("disk full")))
+    with pytest.raises(RuntimeError, match="500.*could not score"):
+        env.step("model Room right end Room;")
+    assert not (data / "rewards.jsonl").exists() and env.task is None       # the container is gone; the result file is kept
+    monkeypatch.setattr(score, "score", real)
+    assert env.send() == client.Result(1.0, "correct", omc=0.3, scorer=1.0)   # the same result, sent again
+
+
+def test_requests_that_are_not_json_or_too_large_are_refused(server):
+    url = server[0]
+    def status(data, headers):
+        request = urllib.request.Request(url + "/v1/results", data, headers)
+        try:
+            return urllib.request.urlopen(request, timeout=10).status
+        except urllib.error.HTTPError as e:
+            return e.code
+    assert status(b"not json", {}) == 400 and status(b"[1, 2]", {}) == 400
+    assert status(b"{}", {"Content-Length": str(app.MAX_BODY_BYTES + 1)}) == 413
+
+
+def test_the_client_takes_the_reward_parts_from_the_server_and_sends_to_its_own_server(server, docker):
+    url = server[0]
+    env = nekaise.Env(url)
+    env.reset()
+    env.result_file = {"ticket": docker[1]["task"]["ticket"], "address": "http://127.0.0.1:9/elsewhere", "image": "nekaise-env:1",
+                       "status": "simulated", "omc_reward": 999, "values": {"T": [20.0, 25.0, 30.0]}}
+    result = env.send()                                           # the address and the reward number of the file are not used
+    assert result == client.Result(reward=0.3, feedback="outputs differ", omc=0.3, scorer=0.0)
+
+
+def test_a_start_that_fails_leaves_no_container(server, monkeypatch):
+    calls = []
+
+    def run(command, input=None, **kw):
+        calls.append(command)
+
+        class Done:
+            returncode, stdout, stderr = (1, "", "nekaise-task: not allowed") if command[-2:] == ["nekaise-task", "start"] else (0, "", "")
+        return Done()
+
+    monkeypatch.setattr(client.subprocess, "run", run)
+    env = nekaise.Env(server[0])
+    with pytest.raises(RuntimeError, match="docker exec failed"):
+        env.reset()
+    assert calls[-1][:3] == ["docker", "rm", "-f"] and env.task is None
+
+
+def test_a_long_output_and_a_time_limit_are_named(server, monkeypatch):
+    def run(command, input=None, **kw):
+        class Done:
+            returncode, stdout, stderr = (124, "x" * 50, "") if "exec" in command and "bash" in command else (0, "", "")
+        return Done()
+
+    monkeypatch.setattr(client.subprocess, "run", run)
+    env = nekaise.Env(server[0])
+    env.task = client.Task("t", "p", "M", "c")
+    done = env.exec("yes", timeout=5, max_output=50)
+    assert done.code == 124 and "did not end in 5 seconds" in done.output and "cut at 50 bytes" in done.output
+
+
+def test_a_result_with_fields_of_a_wrong_type_is_not_valid_and_gives_no_server_fault(server, docker):
+    url = server[0]
+    for bad in ({"status": []}, {"status": "simulated", "values": 123}, {"status": "simulated", "values": {"T": "abc"}}):
+        task_file = client.post(url + "/v1/tasks/sample", {})
+        done = client.post(url + "/v1/results", {"ticket": task_file["ticket"], "image": "nekaise-env:1", **bad})
+        assert done["status"] == "result not valid" and done["reward"] == 0.0
+
+
+def test_requests_with_a_length_that_is_not_valid_are_refused(server):
+    import http.client
+    host, port = server[0].removeprefix("http://").split(":")
+    for length in ("-1", "abc"):
+        connection = http.client.HTTPConnection(host, int(port), timeout=10)
+        connection.putrequest("POST", "/v1/tasks/sample")
+        connection.putheader("Content-Length", length)
+        connection.endheaders()
+        assert connection.getresponse().status == 400
+        connection.close()
+
+
+def test_a_task_set_with_a_fault_is_refused_with_the_task_and_the_reason(tmp_path):
+    def store(name, **change):
+        spec = {**SPEC, **{k: v for k, v in change.items() if k in ("eval",)}}
+        row = {"id": "t-1", "prompt": "p", "model_name": change.get("model_name", "Room"), "spec": json.dumps(spec),
+               "reference_outputs": json.dumps(change.get("reference", REF))}
+        rows = [row, row] if change.get("twice") else [row]
+        folder = tmp_path / name / "env/tasks"
+        folder.mkdir(parents=True)
+        pq.write_table(pa.Table.from_pylist(rows), folder / "part-00000.parquet")
+        return tmp_path / name
+
+    cases = {"same id": dict(twice=True), "not a Modelica name": dict(model_name='Room); system("id"); checkModel(Room'),
+             "no required output": dict(eval={**SPEC["eval"], "outputs": []}),
+             "whole number of intervals": dict(eval={**SPEC["eval"], "interval": 3}),
+             "do not cover": dict(reference={"time": [0.0, 5.0], "T": [20.0, 21.0]}),
+             "count is not": dict(reference={"time": [0.0, 5.0, 10.0], "T": [20.0, 21.0]}),
+             "are constant": dict(reference={"time": [0.0, 5.0, 10.0], "T": [20.0, 20.0, 20.0]})}
+    for i, (reason, change) in enumerate(cases.items()):
+        with pytest.raises(ValueError, match=f"Task 't-1' in .*{reason}"):
+            app.load_tasks(store(f"s{i}", **change))
+    assert len(app.load_tasks(store("good"))) == 1
+
+
+def test_the_server_keeps_a_bounded_number_of_tickets(server, tmp_path, monkeypatch):
+    monkeypatch.setattr(app, "MAX_TICKETS", 3)
+    rows = [{"id": "t-1", "prompt": "p", "model_name": "Room", "spec": json.dumps(SPEC), "reference_outputs": json.dumps(REF)}]
+    (tmp_path / "s/env/tasks").mkdir(parents=True)
+    pq.write_table(pa.Table.from_pylist(rows), tmp_path / "s/env/tasks/part-00000.parquet")
+    station = app.Station(app.load_tasks(tmp_path / "s"), tmp_path / "d")
+    tickets = [station.sample()["ticket"] for _ in range(5)]
+    assert list(station.tickets) == tickets[2:]
