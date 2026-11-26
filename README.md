@@ -8,9 +8,9 @@ A data and RL environment API for LLM training in the built environment.
 
 | Call | What the model gets | For |
 |---|---|---|
-| `fjallstation.Corpus()` | text to read: domain knowledge | mid-training |
+| `fjallstation.Corpus()` | text to read: domain knowledge | training on raw text |
 | `fjallstation.Instruct()` | chats to follow: questions with answers | supervised fine-tuning (SFT) |
-| `fjallstation.Env()` | tasks to do: modelling work with a reward | reinforcement learning |
+| `fjallstation.Env()` | tasks to do: modelling work with a reward | reinforcement learning (RL) |
 
 `Env()` runs on two more parts of the package: a task image (OpenModelica with its libraries) and a server (it gives the tasks and the rewards).
 
@@ -34,7 +34,7 @@ import fjallstation
 
 llm = load_your_llm()
 
-# 1. Mid-training on domain text
+# 1. Training on raw domain text
 for doc in fjallstation.Corpus():
     llm.train_on_text(doc["text"])
 
@@ -42,7 +42,7 @@ for doc in fjallstation.Corpus():
 for row in fjallstation.Instruct():
     llm.train_on_chat(row["messages"])
 
-# 3. Reinforcement learning on tasks with a reward
+# 3. RL on tasks with a reward
 env = fjallstation.Env()
 for episode in range(1000):
     task = env.reset()                             # a task and a fresh container
