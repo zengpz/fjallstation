@@ -9,6 +9,36 @@
 | 3 | the agent | Works in the container, in `/work`, as a normal user. |
 | 4 | your program | `fjallstation-task submit` in the container tries the model and prints the result file. Send it to the address in it. The answer holds the reward. |
 
+## A first episode with Python
+
+With the example store and the server of the quick start:
+
+```python
+import fjallstation                       # reads ./store, or the folder in FJALLSTATION_STORE
+
+for doc in fjallstation.Corpus():
+    print(doc["text"])
+for row in fjallstation.Instruct():
+    print(row["messages"])
+
+env = fjallstation.Env()
+task = env.reset("example-heated-room")  # a task and a fresh container; env.reset() gives a random task
+print(task.prompt)
+print(env.exec("omc --version").output)  # your agent works in the container
+
+model = """
+model HeatedRoom
+  Real T(start = 10, fixed = true);
+  output Real T_room;
+equation
+  2e6*der(T) = 1500 - 100*T;
+  T_room = T;
+end HeatedRoom;
+"""
+result = env.step(model)                 # the container tries the model; the server gives the reward
+print(result.reward, result.feedback)    # 1.0 correct
+```
+
 ## With a shell
 
 ```bash

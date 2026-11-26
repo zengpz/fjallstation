@@ -1,6 +1,6 @@
 [project]
 name = "fjallstation"
-version = "0.1.1"
+version = "0.1.2"
 description = "A data and RL environment API for LLM training in the built environment."
 readme = "README.md"
 requires-python = ">=3.10"

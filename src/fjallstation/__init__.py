@@ -14,4 +14,4 @@ from fjallstation.data import Corpus, Instruct
 from fjallstation.env import Env
 
 __all__ = ["Corpus", "Instruct", "Env"]
-__version__ = "0.1.1"
+__version__ = "0.1.2"

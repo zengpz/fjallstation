@@ -27,38 +27,39 @@ fjallstation example ./store          # the example store: five texts, five chat
 fjallstation server --store ./store   # the server; keep it running in this terminal
 ```
 
-Then, in a second terminal in the same folder, with Python:
+Then your training code uses it. A mock-up: the model, the agent and the training steps are yours.
 
 ```python
-import fjallstation                       # reads ./store, or the folder in FJALLSTATION_STORE
+import fjallstation
 
+llm = load_your_llm()
+
+# 1. Pretraining on domain text
 for doc in fjallstation.Corpus():
-    print(doc["text"])
+    llm.train_on_text(doc["text"])
+
+# 2. Fine-tuning on chats
 for row in fjallstation.Instruct():
-    print(row["messages"])
+    llm.train_on_chat(row["messages"])
 
+# 3. Reinforcement learning on tasks with a reward
 env = fjallstation.Env()
-task = env.reset("example-heated-room")  # a task and a fresh container; env.reset() gives a random task
-print(task.prompt)
-print(env.exec("omc --version").output)  # your agent works in the container
-
-model = """
-model HeatedRoom
-  Real T(start = 10, fixed = true);
-  output Real T_room;
-equation
-  2e6*der(T) = 1500 - 100*T;
-  T_room = T;
-end HeatedRoom;
-"""
-result = env.step(model)                 # the container tries the model; the server gives the reward
-print(result.reward, result.feedback)    # 1.0 correct
+for episode in range(1000):
+    task = env.reset()                             # a task and a fresh container
+    agent = Agent(llm, task.prompt)                # your agent: the LLM with a shell
+    while agent.works():
+        output = env.exec(agent.next_command()).output
+        agent.read(output)
+    result = env.step(agent.final_model())         # the container tries the model; the server scores it
+    llm.learn(agent.steps, result.reward)          # 1.0 for a correct model; 0 to 0.3 for how far another one got
 ```
+
+A [first episode that you can run](https://github.com/zengpz/fjallstation/blob/main/docs/protocol.md) is in the documents.
 
 ## Documents
 
 - [The data folder](https://github.com/zengpz/fjallstation/blob/main/docs/data.md): the format, the examples, and how to make tasks of your own.
-- [One episode, step by step](https://github.com/zengpz/fjallstation/blob/main/docs/protocol.md): the same episode with a shell, who runs as whom, and use on several machines.
+- [One episode, step by step](https://github.com/zengpz/fjallstation/blob/main/docs/protocol.md): a first episode with Python and with a shell, who runs as whom, and use on several machines.
 - [The reward](https://github.com/zengpz/fjallstation/blob/main/docs/scoring.md): the two parts of the reward and the rule behind them.
 
 ## Licence
