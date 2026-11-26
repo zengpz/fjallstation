@@ -33,6 +33,8 @@ curl -s -X POST "$(python3 -c 'import json; print(json.load(open("result.json"))
 
 Stop the processes of the agent before the submission. The container is the outer boundary: an episode mounts no folder of the host. `nekaise.Env()` gives the container limits for CPU, memory and the number of processes. It gives no limit for the disk.
 
+`env.exec(command)` stops a command at its time limit (exit code 124) and returns the first megabyte of its output. The command keeps its own exit code. A process that stays in the background must write to a file. These limits are a guard against accidents, not against an agent that works against them.
+
 ## The server
 
 | Call | Body | Answer |

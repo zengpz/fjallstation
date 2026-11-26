@@ -32,8 +32,9 @@ from dataclasses import dataclass
 DEFAULT_SERVER = "http://127.0.0.1:8040"
 AGENT = "1000:1000"                      # user and group of the agent in the container; never root
 MAX_OUTPUT = 1_000_000                   # most bytes of the output of one command that come back
-# In the container: stop the command at the time limit, and cut its output. The exit code is that of the command.
-RUN = 'timeout -k 10 "$1" bash -c "$2" 2>&1 | head -c "$3"; exit "${PIPESTATUS[0]}"'
+# In the container: stop the command at the time limit, keep the first part of its output and drop the rest.
+# The exit code is that of the command. This is a guard against an accident, not against an agent that works against it.
+RUN = 'exec 2>/dev/null; timeout -k 10 "$1" bash -c "$2" 2>&1 | { head -c "$3"; cat > /dev/null; }; exit "${PIPESTATUS[0]}"'
 
 
 @dataclass
@@ -59,7 +60,7 @@ class Run:
 
 
 def _docker(*args: str, timeout: int | None = None, check: bool = True, input: str | None = None) -> subprocess.CompletedProcess:
-    done = subprocess.run(["docker", *args], capture_output=True, text=True, timeout=timeout, input=input)
+    done = subprocess.run(["docker", *args], capture_output=True, encoding="utf-8", errors="replace", timeout=timeout, input=input)
     if check and done.returncode != 0:
         raise RuntimeError(f"docker {args[0]} failed: {done.stderr.strip()[:500]}")
     return done
@@ -105,8 +106,9 @@ class Env:
     def exec(self, command: str, timeout: int = 1800, max_output: int = MAX_OUTPUT) -> Run:
         """Run a shell command in the container of the task, in /work, as the normal user.
 
-        The container stops the command after `timeout` seconds (exit code 124) and gives at most `max_output`
-        bytes of its output.
+        The container stops the command after `timeout` seconds (exit code 124) and gives the first `max_output`
+        bytes of its output. A process that the command leaves in the background must write to a file; else the
+        command waits for it.
         """
         if self.task is None:
             raise RuntimeError("No task is open. Call reset() first.")

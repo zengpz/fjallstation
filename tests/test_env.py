@@ -101,6 +101,8 @@ def test_one_result_for_each_ticket_and_clear_errors(server, docker):
     env.step("model Room right end Room;")
     used = {"ticket": docker[1]["task"]["ticket"], "image": "nekaise-env:1", "status": "simulated", "values": {"T": REF["T"]}}
     again = client.post(url + "/v1/results", used)                # the same result again: the same answer, and no second record
+    with pytest.raises(RuntimeError, match="409.*needs nekaise-env:1"):
+        client.post(url + "/v1/results", {**used, "image": "nekaise-env:0"})
     assert again["reward"] == 1.0 and again["status"] == "correct" and len((server[1] / "rewards.jsonl").read_text().splitlines()) == 1
     with pytest.raises(RuntimeError, match="409.*result already"):
         client.post(url + "/v1/results", {**used, "values": {"T": [0.0, 0.0, 0.0]}})
@@ -225,7 +227,7 @@ def test_requests_with_a_length_that_is_not_valid_are_refused(server):
 
 def test_a_task_set_with_a_fault_is_refused_with_the_task_and_the_reason(tmp_path):
     def store(name, **change):
-        spec = {**SPEC, **{k: v for k, v in change.items() if k in ("eval",)}}
+        spec = {**SPEC, **{k: v for k, v in change.items() if k in ("eval", "limit", "libraries")}}
         row = {"id": "t-1", "prompt": "p", "model_name": change.get("model_name", "Room"), "spec": json.dumps(spec),
                "reference_outputs": json.dumps(change.get("reference", REF))}
         rows = [row, row] if change.get("twice") else [row]
@@ -234,12 +236,17 @@ def test_a_task_set_with_a_fault_is_refused_with_the_task_and_the_reason(tmp_pat
         pq.write_table(pa.Table.from_pylist(rows), folder / "part-00000.parquet")
         return tmp_path / name
 
-    cases = {"same id": dict(twice=True), "not a Modelica name": dict(model_name='Room); system("id"); checkModel(Room'),
+    cases = {"same id": dict(twice=True), "not allowed in model_name": dict(model_name='Room); system("id"); checkModel(Room'),
              "no required output": dict(eval={**SPEC["eval"], "outputs": []}),
              "whole number of intervals": dict(eval={**SPEC["eval"], "interval": 3}),
              "do not cover": dict(reference={"time": [0.0, 5.0], "T": [20.0, 21.0]}),
              "count is not": dict(reference={"time": [0.0, 5.0, 10.0], "T": [20.0, 21.0]}),
-             "are constant": dict(reference={"time": [0.0, 5.0, 10.0], "T": [20.0, 20.0, 20.0]})}
+             "are constant": dict(reference={"time": [0.0, 5.0, 10.0], "T": [20.0, 20.0, 20.0]}),
+             "in order": dict(reference={"time": [0.0, 8.0, 3.0, 10.0], "T": [20.0, 21.0, 22.0, 23.0]}),
+             "a time that is not a number": dict(reference={"time": [0.0, float("nan"), 10.0], "T": [20.0, 21.0, 22.0]}),
+             "numbers for stop_time": dict(eval={**SPEC["eval"], "tolerance": True}),
+             "limit is not a number above zero": dict(limit={}),
+             "not allowed in libraries": dict(libraries=["bad library text"])}
     for i, (reason, change) in enumerate(cases.items()):
         with pytest.raises(ValueError, match=f"Task 't-1' in .*{reason}"):
             app.load_tasks(store(f"s{i}", **change))
@@ -254,3 +261,27 @@ def test_the_server_keeps_a_bounded_number_of_tickets(server, tmp_path, monkeypa
     station = app.Station(app.load_tasks(tmp_path / "s"), tmp_path / "d")
     tickets = [station.sample()["ticket"] for _ in range(5)]
     assert list(station.tickets) == tickets[2:]
+
+
+def test_the_shell_line_of_a_command_keeps_the_exit_code_cuts_the_output_and_stops_at_the_limit():
+    import subprocess
+    import time
+
+    def run(command, seconds=20, limit=100):
+        started = time.monotonic()
+        done = subprocess.run(["bash", "-c", client.RUN, "nekaise", str(seconds), command, str(limit)], capture_output=True, timeout=30)
+        return done.returncode, done.stdout, done.stderr, time.monotonic() - started
+
+    assert run("echo hello; echo problem >&2; exit 3")[:3] == (3, b"hello\nproblem\n", b"")
+    code, out, _, _ = run("for i in $(seq 1 20000); do echo x; done; exit 42")       # a noisy command runs to its end
+    assert code == 42 and len(out) == 100
+    code, _, _, seconds = run("sleep 30", seconds=1)
+    assert code == 124 and seconds < 10
+
+
+def test_output_of_a_command_that_is_not_text_does_not_stop_the_client(server, monkeypatch):
+    real = client.subprocess.run
+    monkeypatch.setattr(client.subprocess, "run", lambda command, **kw: real(["printf", r"caf\303\251 \377\376 end"], **{k: v for k, v in kw.items() if k != "input"}))
+    env = nekaise.Env(server[0])
+    env.task = client.Task("t", "p", "M", "c")
+    assert env.exec("cat file.bin").output.startswith("café ") and env.exec("x").output.endswith(" end")

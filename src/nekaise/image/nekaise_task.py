@@ -59,12 +59,15 @@ def check(task: dict) -> None:
     for field, value, pattern in fields:
         if not isinstance(value, str) or not re.fullmatch(pattern, value):
             raise ValueError(f"The task file has a value that is not allowed in {field}: {value!r}")
-    try:
-        start_time, stop, interval, tolerance = (float(ev.get(k, d)) for k, d in (("start_time", 0), ("stop_time", "x"), ("interval", "x"), ("tolerance", "x")))
-    except (TypeError, ValueError):
-        raise ValueError("The task file needs numbers for stop_time, interval and tolerance.") from None
-    if not (all(math.isfinite(x) for x in (start_time, stop, interval, tolerance)) and interval > 0 and stop > start_time and tolerance > 0):
+    numbers = [ev.get("start_time", 0), ev.get("stop_time"), ev.get("interval"), ev.get("tolerance")]
+    if not all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in numbers):
+        raise ValueError("The task file needs numbers for stop_time, interval and tolerance.")
+    start_time, stop, interval, tolerance = numbers
+    if not (interval > 0 and stop > start_time and tolerance > 0):
         raise ValueError("The task file needs a stop time after the start time, and an interval and a tolerance above zero.")
+    count = (stop - start_time) / interval
+    if abs(count - round(count)) > 1e-6:
+        raise ValueError("The time from start_time to stop_time is not a whole number of intervals.")
 
 
 def hide(files: list, library_root: str = LIBRARY_ROOT) -> int:
@@ -124,8 +127,8 @@ def script(task: dict, file_name: str = "model.mo") -> str:
     variables = "|".join(re.escape(v) for v in ev["outputs"])
     return (loads + f'loadFile("{file_name}"); getErrorString();\n' + drop
             + f"checkModel({name}); getErrorString();\n"
-            + f'simulate({name}, startTime={ev.get("start_time", 0)}, stopTime={ev["stop_time"]}, numberOfIntervals={n}, '
-              f'tolerance={ev["tolerance"]}, outputFormat="csv", variableFilter="{variables}", fileNamePrefix="out"); '
+            + f'simulate({name}, startTime={float(ev.get("start_time", 0))!r}, stopTime={float(ev["stop_time"])!r}, numberOfIntervals={n}, '
+              f'tolerance={float(ev["tolerance"])!r}, outputFormat="csv", variableFilter="{variables}", fileNamePrefix="out"); '
               "getErrorString();\n")
 
 
@@ -213,10 +216,12 @@ def read_run(log, result_path: str, task: dict) -> tuple:
         table = read_csv(text)
     except IndexError:
         return "simulation failed", None
-    if not table.get("time"):
-        return "simulation failed", None
     ev = run["eval"]
-    if not all(math.isfinite(t) for t in table["time"]):
+    times = table.get("time") or []
+    in_order = all(math.isfinite(t) for t in times) and all(a <= b for a, b in zip(times, times[1:]))
+    if not times or not in_order or any(len(column) != len(times) for column in table.values()):
+        return "simulation failed", None                         # no rows, times that are not numbers or not in order, or columns that do not fit
+    if times[0] > ev.get("start_time", 0) + 1e-6 * ev["interval"]:
         return "simulation failed", None
     if table["time"][-1] < ev["stop_time"] - 1e-6 * ev["interval"]:
         return "simulation stopped early", None
@@ -282,7 +287,7 @@ def main(argv: list) -> int:
         print(__doc__.strip().split("\n\n")[0] + "\n\n    nekaise-task start [task file]\n    nekaise-task submit [model file]", file=sys.stderr)
         return 2
     source = argv[2] if len(argv) > 2 and argv[2] != "-" else None
-    text = open(source, encoding="utf-8", errors="replace").read() if source else sys.stdin.read()
+    text = (open(source, "rb") if source else sys.stdin.buffer).read().decode("utf-8", errors="replace")
     if os.geteuid() != 0:
         print("nekaise-task: run this command as root (for example: docker exec -u 0 ...).", file=sys.stderr)
         return 1

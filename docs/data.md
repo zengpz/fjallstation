@@ -58,9 +58,10 @@ The reference values are compared at the fixed time steps: from `start_time` to 
 
 The server checks each task when it starts, and it names the task and the reason when one is not right. The rules:
 
-- A task id occurs one time only. The model name is a Modelica name.
+- A task id occurs one time only. The model name, the library names and the output names have the form of Modelica names; the times and the tolerance are numbers.
 - The time from `start_time` to `stop_time` is a whole number of intervals.
-- The reference values cover this time, and each output has one value for each time.
+- The reference values cover this time in order, and each output has one value for each time.
+- A limit is a number above zero, for the task or for each output.
 - A reference output is not constant, because the error is measured against its range.
 
 ## Tasks of your own

@@ -18,7 +18,7 @@ def test_the_script_loads_checks_and_simulates_with_the_settings_of_the_task():
     text = command.script(TASK)
     assert 'loadModel(Modelica, {"4.1.0"})' in text and 'loadModel(Buildings, {"13.0.0"})' in text
     assert text.index('loadFile("model.mo")') < text.index("deleteClass(Buildings.Fluid.Examples.Room)") < text.index("checkModel(Room)")
-    assert "stopTime=10, numberOfIntervals=2, tolerance=1e-06" in text and 'variableFilter="T|Q"' in text
+    assert "startTime=0.0, stopTime=10.0, numberOfIntervals=2, tolerance=1e-06" in text and 'variableFilter="T|Q"' in text
 
 
 def test_start_removes_the_answer_files_and_puts_the_data_files_in_place(tmp_path):
@@ -112,7 +112,8 @@ def test_a_result_that_is_a_link_a_pipe_or_too_large_is_not_read(tmp_path):
 def test_the_commands_need_root_and_name_their_use(capsys, monkeypatch):
     assert command.main(["nekaise-task"]) == 2 and "nekaise-task submit" in capsys.readouterr().err
     monkeypatch.setattr(command.os, "geteuid", lambda: 1000)
-    monkeypatch.setattr(command.sys, "stdin", type("In", (), {"read": staticmethod(lambda: "{}")})())
+    import io
+    monkeypatch.setattr(command.sys, "stdin", type("In", (), {"buffer": io.BytesIO(b"{}")})())
     assert command.main(["nekaise-task", "start"]) == 1 and "as root" in capsys.readouterr().err
 
 
@@ -121,7 +122,11 @@ def test_a_task_file_with_a_value_that_could_change_the_script_is_refused(tmp_pa
     for change in ({"model_name": 'Room); system("id"); checkModel(Room'}, {"run": {**TASK["run"], "msl": '4.1.0"}); system("id");'}},
                    {"run": {**TASK["run"], "libraries": ["Buildings 13.0.0 x"]}}, {"run": {**TASK["run"], "hidden_classes": ['A"); system("id"']}},
                    {"run": {**TASK["run"], "eval": {**TASK["run"]["eval"], "outputs": ['T", fileNamePrefix="x']}}},
-                   {"run": {**TASK["run"], "eval": {**TASK["run"]["eval"], "interval": 0}}}):
+                   {"run": {**TASK["run"], "eval": {**TASK["run"]["eval"], "interval": 0}}},
+                   {"run": {**TASK["run"], "eval": {**TASK["run"]["eval"], "interval": 3}}},            # 10 s is not a whole number of 3 s
+                   {"run": {**TASK["run"], "eval": {**TASK["run"]["eval"], "tolerance": True}}},
+                   {"run": {**TASK["run"], "eval": {**TASK["run"]["eval"], "tolerance": "1_0"}}},
+                   {"run": {**TASK["run"], "eval": {**TASK["run"]["eval"], "stop_time": "10"}}}):
         with pytest.raises(ValueError):
             command.check({**TASK, **change})
     with pytest.raises(ValueError, match="model_name"):
@@ -133,6 +138,11 @@ def test_a_time_column_with_a_value_that_is_not_a_number_is_a_failed_simulation(
     path = tmp_path / "out_res.csv"
     path.write_text('"time","T","Q"\n0,20,0\n5,25,500\nnan,30,1000\n')
     assert command.read_run(OK, str(path), TASK)[0] == "simulation failed"
+    for text in ('"time","T","Q"\n5,25,500\n10,30,1000\n',                       # starts after the start time
+                 '"time","T","Q"\n0,20,0\n8,28,800\n3,23,300\n10,30,1000\n',     # times not in order
+                 '"time","T","T"\n0,20,20\n10,30,30\n'):                          # one name two times
+        path.write_text(text)
+        assert command.read_run(OK, str(path), TASK)[0] == "simulation failed", text
 
 
 def test_the_model_runs_as_a_user_without_rights_and_with_its_own_home(tmp_path, monkeypatch):

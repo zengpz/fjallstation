@@ -32,34 +32,30 @@ from pathlib import Path
 import pyarrow.parquet as pq
 
 from nekaise import score
-from nekaise.image import IMAGE
+from nekaise.image import IMAGE, nekaise_task
 
 MAX_BODY_BYTES = 50_000_000              # a longer request is refused
 MAX_TICKETS = 200_000                    # the server keeps this number of tickets; the oldest ones go first
-NAME = r"[A-Za-z_][A-Za-z0-9_]*"
 
 
 def check_task(row: dict, spec: dict, table: dict) -> None:
     """Raise ValueError when a task cannot be served: settings or reference values that are not complete or not clear."""
-    ev = spec.get("eval") or {}
-    outputs = ev.get("outputs")
-    if not isinstance(row.get("model_name"), str) or not re.fullmatch(NAME, row["model_name"]):
-        raise ValueError("the model name is not a Modelica name")
-    if not isinstance(spec.get("msl"), str) or not isinstance(spec.get("libraries"), list) or not isinstance(spec.get("hidden_files"), list):
-        raise ValueError("the settings need msl, libraries and hidden_files")
-    if not isinstance(outputs, list) or not outputs or not all(isinstance(n, str) and n for n in outputs):
+    if not all(isinstance(spec.get(key), list) for key in ("libraries", "hidden_files")) or not isinstance(spec.get("eval"), dict):
+        raise ValueError("the settings need msl, libraries, hidden_files and eval")
+    if not isinstance(spec["eval"].get("outputs"), list) or not spec["eval"]["outputs"]:
         raise ValueError("the settings name no required output")
-    try:
-        start, stop, interval = float(ev.get("start_time", 0)), float(ev["stop_time"]), float(ev["interval"])
-        float(ev["tolerance"])
-    except (KeyError, TypeError, ValueError):
-        raise ValueError("the settings need numbers for stop_time, interval and tolerance") from None
-    count = (stop - start) / interval if interval > 0 else math.nan
-    if not math.isfinite(count) or count < 1 or abs(count - round(count)) > 1e-6:
-        raise ValueError("the time from start_time to stop_time is not a whole number of intervals")
+    nekaise_task.check({"model_name": row.get("model_name"), "run": score.run_part(spec)})     # the rules of the image command
+    ev = spec["eval"]
+    outputs, start, stop, interval = ev["outputs"], ev.get("start_time", 0), ev["stop_time"], ev["interval"]
+    limit = spec.get("limit", score.LIMIT)
+    limits = [limit.get(name) for name in outputs] if isinstance(limit, dict) else [limit]
+    if not all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) and x > 0 for x in limits):
+        raise ValueError("the limit is not a number above zero, or an output has no limit")
     time_ = table.get("time") if isinstance(table, dict) else None
-    if not isinstance(time_, list) or not time_ or time_[0] > start + 1e-9 * interval or time_[-1] < stop - 1e-6 * interval:
-        raise ValueError("the reference values do not cover the time from start_time to stop_time")
+    if not isinstance(time_, list) or not time_ or not all(isinstance(t, (int, float)) and math.isfinite(t) for t in time_):
+        raise ValueError("the reference values have no times, or a time that is not a number")
+    if any(a > b for a, b in zip(time_, time_[1:])) or time_[0] > start + 1e-9 * interval or time_[-1] < stop - 1e-6 * interval:
+        raise ValueError("the reference values do not cover the time from start_time to stop_time in order")
     for name in outputs:
         if not isinstance(table.get(name), list) or len(table[name]) != len(time_):
             raise ValueError(f"the reference values of {name} are missing, or their count is not the count of the times")
@@ -132,12 +128,12 @@ class Station:
             entry = self.tickets.get(ticket)
             if entry is None:
                 raise KeyError(ticket)
+            if result.get("image") != self.image:                 # other versions can give other values
+                raise PermissionError(f"The result comes from the image {result.get('image')}. This server needs {self.image}.")
             if entry["state"] == "done" and entry["mark"] == mark:
                 return entry["answer"]                            # the answer got lost on its way; the client sent the result again
             if entry["state"] != "open":
                 raise PermissionError("This ticket has its result already.")
-            if result.get("image") != self.image:                 # other versions can give other values
-                raise PermissionError(f"The result comes from the image {result.get('image')}. This server needs {self.image}.")
             entry["state"] = "scoring"
         task = self.tasks[entry["task"]]
         try:
