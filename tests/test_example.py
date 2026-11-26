@@ -3,9 +3,9 @@ import json
 import pyarrow.parquet as pq
 import pytest
 
-from nekaise import example, image, score
-from nekaise import server as app
-from nekaise.__main__ import main
+from fjallstation import example, image, score
+from fjallstation import server as app
+from fjallstation.__main__ import main
 
 
 def simulated(code, spec, files=None, **kw):
@@ -43,9 +43,9 @@ def test_a_task_file_for_one_try_has_no_ticket_and_no_reference():
 
 
 def test_the_image_tag_is_the_same_in_the_package_the_dockerfile_and_the_command():
-    from nekaise.image import nekaise_task
-    assert f"NEKAISE_IMAGE={image.IMAGE}\n" in (image.FOLDER / "Dockerfile").read_text() and f'"{image.IMAGE}"' in (image.FOLDER / "nekaise_task.py").read_text()
-    assert nekaise_task.OMC_REWARD == score.OMC_REWARD
+    from fjallstation.image import fjallstation_task
+    assert f"FJALLSTATION_IMAGE={image.IMAGE}\n" in (image.FOLDER / "Dockerfile").read_text() and f'"{image.IMAGE}"' in (image.FOLDER / "fjallstation_task.py").read_text()
+    assert fjallstation_task.OMC_REWARD == score.OMC_REWARD
 
 
 def test_the_command_builds_the_image_writes_the_example_and_starts_the_server(tmp_path, monkeypatch):

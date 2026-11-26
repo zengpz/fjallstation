@@ -1,6 +1,6 @@
 """The server side of Env: it gives tasks and it scores results. It runs no simulation.
 
-    nekaise server --store <store folder>          (or: python -m nekaise.server --store <store folder>)
+    fjallstation server --store <store folder>          (or: python -m fjallstation.server --store <store folder>)
 
 The server reads the task sets of the store: `env/tasks` and each set `env/tasks-<name>`. A client asks for a task
 and gets a task file: the prompt, the name of the image, the library files to hide, the settings that the submit
@@ -31,8 +31,8 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 
-from nekaise import score
-from nekaise.image import IMAGE, nekaise_task
+from fjallstation import score
+from fjallstation.image import IMAGE, fjallstation_task
 
 MAX_BODY_BYTES = 50_000_000              # a longer request is refused
 MAX_TICKETS = 200_000                    # the server keeps this number of tickets; the oldest ones go first
@@ -44,7 +44,7 @@ def check_task(row: dict, spec: dict, table: dict) -> None:
         raise ValueError("the settings need msl, libraries, hidden_files and eval")
     if not isinstance(spec["eval"].get("outputs"), list) or not spec["eval"]["outputs"]:
         raise ValueError("the settings name no required output")
-    nekaise_task.check({"model_name": row.get("model_name"), "run": score.run_part(spec)})     # the rules of the image command
+    fjallstation_task.check({"model_name": row.get("model_name"), "run": score.run_part(spec)})     # the rules of the image command
     ev = spec["eval"]
     outputs, start, stop, interval = ev["outputs"], ev.get("start_time", 0), ev["stop_time"], ev["interval"]
     limit = spec.get("limit", score.LIMIT)
@@ -211,7 +211,7 @@ def serve(station: Station, host: str = "127.0.0.1", port: int = 8040) -> Thread
 
 
 def main(argv: list | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="nekaise server", description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(prog="fjallstation server", description=__doc__.split("\n")[0])
     parser.add_argument("--store", type=Path, default=Path("store"), help="the folder with the data; the server reads its env/ part (default: ./store)")
     parser.add_argument("--data", type=Path, default=Path("rewards"), help="folder for the reward record (default: ./rewards)")
     parser.add_argument("--host", default="127.0.0.1")
@@ -221,7 +221,7 @@ def main(argv: list | None = None) -> None:
     args = parser.parse_args(argv)
     station = Station(load_tasks(args.store), args.data, args.image, args.seed)
     server = serve(station, args.host, args.port)
-    print(f"nekaise server: {len(station.tasks)} tasks, image {station.image}, http://{args.host}:{args.port}", flush=True)
+    print(f"fjallstation server: {len(station.tasks)} tasks, image {station.image}, http://{args.host}:{args.port}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -5,10 +5,10 @@ from pathlib import Path
 
 
 def store() -> Path:
-    """The folder that holds the data. The variable `NEKAISE_STORE` names it; without it, `./store` is used."""
-    folder = Path(os.environ.get("NEKAISE_STORE") or "store")
+    """The folder that holds the data. The variable `FJALLSTATION_STORE` names it; without it, `./store` is used."""
+    folder = Path(os.environ.get("FJALLSTATION_STORE") or "store")
     if not folder.is_dir():
-        raise FileNotFoundError(f"No data folder at {folder.resolve()}. Set NEKAISE_STORE to the folder with the data (see docs/data.md).")
+        raise FileNotFoundError(f"No data folder at {folder.resolve()}. Set FJALLSTATION_STORE to the folder with the data (see docs/data.md).")
     return folder
 
 

@@ -6,10 +6,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-import nekaise
-from nekaise import env as client
-from nekaise import score
-from nekaise import server as app
+import fjallstation
+from fjallstation import env as client
+from fjallstation import score
+from fjallstation import server as app
 
 SPEC = {"model_name": "Room", "msl": "4.1.0", "libraries": ["Buildings 13.0.0"],
         "eval": {"start_time": 0, "stop_time": 10, "interval": 5, "tolerance": 1e-6, "outputs": ["T"]},
@@ -41,9 +41,9 @@ def docker(monkeypatch):
 
         class Done:
             returncode, stdout, stderr = 0, "OpenModelica 1.27.0\n", ""
-        if command[-2:] == ["nekaise-task", "start"]:
+        if command[-2:] == ["fjallstation-task", "start"]:
             state["task"] = json.loads(input)
-        if command[-2:] == ["nekaise-task", "submit"]:
+        if command[-2:] == ["fjallstation-task", "submit"]:
             task, code = state["task"], input
             status = ("no model" if not code.strip() else "uses the source example" if "Fluid.Examples.Room" in code else
                       "did not load" if "broken" in code else "check failed" if "unchecked" in code else "simulated")
@@ -58,21 +58,21 @@ def docker(monkeypatch):
 
 def test_a_task_a_container_and_the_reward_in_two_parts(server, docker):
     (url, data), (calls, state) = server, docker
-    env = nekaise.Env(url)
+    env = fjallstation.Env(url)
     task = env.reset()
-    assert task.prompt.startswith("Build room") and task.model_name == "Room" and task.container.startswith("nekaise-env-")
+    assert task.prompt.startswith("Build room") and task.model_name == "Room" and task.container.startswith("fjallstation-env-")
     run, start = calls[0], calls[1]
-    assert run[:2] == ["docker", "run"] and run[run.index("--network") + 1] == "none" and "nekaise-env:1" in run
+    assert run[:2] == ["docker", "run"] and run[run.index("--network") + 1] == "none" and "fjallstation-env:1" in run
     assert run[run.index("--user") + 1] == "1000:1000" and run[run.index("--pids-limit") + 1] == "512"       # the agent is never root
-    assert start == ["docker", "exec", "-i", "-u", "0", task.container, "nekaise-task", "start"]           # the image hides the files, as root
+    assert start == ["docker", "exec", "-i", "-u", "0", task.container, "fjallstation-task", "start"]           # the image hides the files, as root
     task_file = state["task"]
     assert task_file["hidden_files"] == SPEC["hidden_files"] and task_file["address"] == url + "/v1/results" and len(task_file["ticket"]) == 24
     assert task_file["run"] == score.run_part(SPEC)
     assert env.exec("omc --version", timeout=90, max_output=5000).output.startswith("OpenModelica") and "-u" not in calls[2]
-    assert calls[2][-6:] == ["-c", client.RUN, "nekaise", "90", "omc --version", "5000"]       # time limit and output limit in the container
+    assert calls[2][-6:] == ["-c", client.RUN, "fjallstation", "90", "omc --version", "5000"]       # time limit and output limit in the container
     result = env.step("model Room right end Room;")
     assert result == client.Result(reward=1.0, feedback="correct", omc=0.3, scorer=1.0)
-    assert calls[3][-2:] == ["nekaise-task", "submit"] and calls[3][3:5] == ["-u", "0"]
+    assert calls[3][-2:] == ["fjallstation-task", "submit"] and calls[3][3:5] == ["-u", "0"]
     assert calls[-1][:3] == ["docker", "rm", "-f"] and env.task is None and env.result_file is None       # the container is removed
     record = json.loads((data / "rewards.jsonl").read_text().splitlines()[0])
     assert record["reward"] == 1.0 and record["omc_reward"] == 0.3 and record["task"] == task.id and record["outputs"] == {"T": 0.0}
@@ -81,7 +81,7 @@ def test_a_task_a_container_and_the_reward_in_two_parts(server, docker):
 
 def test_each_stage_has_its_reward_and_a_short_status(server, docker):
     url = server[0]
-    env = nekaise.Env(url)
+    env = fjallstation.Env(url)
     env.reset("t-1")
     assert env.step("model Room end Room;") == client.Result(0.3, "outputs differ", omc=0.3, scorer=0.0)       # it simulates
     env.reset("t-1")
@@ -96,13 +96,13 @@ def test_each_stage_has_its_reward_and_a_short_status(server, docker):
 
 def test_one_result_for_each_ticket_and_clear_errors(server, docker):
     url = server[0]
-    env = nekaise.Env(url)
+    env = fjallstation.Env(url)
     env.reset()
     env.step("model Room right end Room;")
-    used = {"ticket": docker[1]["task"]["ticket"], "image": "nekaise-env:1", "status": "simulated", "values": {"T": REF["T"]}}
+    used = {"ticket": docker[1]["task"]["ticket"], "image": "fjallstation-env:1", "status": "simulated", "values": {"T": REF["T"]}}
     again = client.post(url + "/v1/results", used)                # the same result again: the same answer, and no second record
-    with pytest.raises(RuntimeError, match="409.*needs nekaise-env:1"):
-        client.post(url + "/v1/results", {**used, "image": "nekaise-env:0"})
+    with pytest.raises(RuntimeError, match="409.*needs fjallstation-env:1"):
+        client.post(url + "/v1/results", {**used, "image": "fjallstation-env:0"})
     assert again["reward"] == 1.0 and again["status"] == "correct" and len((server[1] / "rewards.jsonl").read_text().splitlines()) == 1
     with pytest.raises(RuntimeError, match="409.*result already"):
         client.post(url + "/v1/results", {**used, "values": {"T": [0.0, 0.0, 0.0]}})
@@ -115,34 +115,34 @@ def test_one_result_for_each_ticket_and_clear_errors(server, docker):
     with pytest.raises(RuntimeError, match="step"):
         env.send()
     with pytest.raises(ConnectionError):
-        nekaise.Env("http://127.0.0.1:9").reset()
+        fjallstation.Env("http://127.0.0.1:9").reset()
 
 
 def test_the_answers_of_the_server_hold_no_reference_and_no_error_number(server, docker):
     url = server[0]
-    env = nekaise.Env(url)
+    env = fjallstation.Env(url)
     task_file = env._post("/v1/tasks/sample", {})
     assert set(task_file) == {"ticket", "address", "task", "prompt", "model_name", "image", "hidden_files", "run"}
     assert "limit" not in task_file["run"] and "reference" not in json.dumps(task_file)
     done = client.post(task_file["address"], {"ticket": task_file["ticket"], "image": task_file["image"], "status": "simulated", "values": {"T": [20.0, 25.0, 30.0]}})
-    assert done == {"reward": 0.0, "omc_reward": 0.3, "status": "outputs differ", "task": task_file["task"], "image": "nekaise-env:1"}
+    assert done == {"reward": 0.0, "omc_reward": 0.3, "status": "outputs differ", "task": task_file["task"], "image": "fjallstation-env:1"}
 
 
 def test_a_result_of_another_image_version_is_refused_and_does_not_use_up_the_ticket(server, docker):
     (url, data), (calls, state) = server, docker
-    env = nekaise.Env(url)
+    env = fjallstation.Env(url)
     env.reset()
-    state["image"] = "nekaise-env:0"
-    with pytest.raises(RuntimeError, match="409.*needs nekaise-env:1"):
+    state["image"] = "fjallstation-env:0"
+    with pytest.raises(RuntimeError, match="409.*needs fjallstation-env:1"):
         env.step("model Room right end Room;")
     assert not (data / "rewards.jsonl").exists() and env.result_file is not None
-    env.result_file["image"] = "nekaise-env:1"
+    env.result_file["image"] = "fjallstation-env:1"
     assert env.send().reward == 1.0
 
 
 def test_a_fault_of_the_server_gives_no_reward_and_the_client_keeps_the_result(server, docker, monkeypatch):
     url, data = server
-    env = nekaise.Env(url)
+    env = fjallstation.Env(url)
     env.reset()
     real = score.score
     monkeypatch.setattr(score, "score", lambda *a: (_ for _ in ()).throw(OSError("disk full")))
@@ -167,9 +167,9 @@ def test_requests_that_are_not_json_or_too_large_are_refused(server):
 
 def test_the_client_takes_the_reward_parts_from_the_server_and_sends_to_its_own_server(server, docker):
     url = server[0]
-    env = nekaise.Env(url)
+    env = fjallstation.Env(url)
     env.reset()
-    env.result_file = {"ticket": docker[1]["task"]["ticket"], "address": "http://127.0.0.1:9/elsewhere", "image": "nekaise-env:1",
+    env.result_file = {"ticket": docker[1]["task"]["ticket"], "address": "http://127.0.0.1:9/elsewhere", "image": "fjallstation-env:1",
                        "status": "simulated", "omc_reward": 999, "values": {"T": [20.0, 25.0, 30.0]}}
     result = env.send()                                           # the address and the reward number of the file are not used
     assert result == client.Result(reward=0.3, feedback="outputs differ", omc=0.3, scorer=0.0)
@@ -182,11 +182,11 @@ def test_a_start_that_fails_leaves_no_container(server, monkeypatch):
         calls.append(command)
 
         class Done:
-            returncode, stdout, stderr = (1, "", "nekaise-task: not allowed") if command[-2:] == ["nekaise-task", "start"] else (0, "", "")
+            returncode, stdout, stderr = (1, "", "fjallstation-task: not allowed") if command[-2:] == ["fjallstation-task", "start"] else (0, "", "")
         return Done()
 
     monkeypatch.setattr(client.subprocess, "run", run)
-    env = nekaise.Env(server[0])
+    env = fjallstation.Env(server[0])
     with pytest.raises(RuntimeError, match="docker exec failed"):
         env.reset()
     assert calls[-1][:3] == ["docker", "rm", "-f"] and env.task is None
@@ -199,7 +199,7 @@ def test_a_long_output_and_a_time_limit_are_named(server, monkeypatch):
         return Done()
 
     monkeypatch.setattr(client.subprocess, "run", run)
-    env = nekaise.Env(server[0])
+    env = fjallstation.Env(server[0])
     env.task = client.Task("t", "p", "M", "c")
     done = env.exec("yes", timeout=5, max_output=50)
     assert done.code == 124 and "did not end in 5 seconds" in done.output and "cut at 50 bytes" in done.output
@@ -209,7 +209,7 @@ def test_a_result_with_fields_of_a_wrong_type_is_not_valid_and_gives_no_server_f
     url = server[0]
     for bad in ({"status": []}, {"status": "simulated", "values": 123}, {"status": "simulated", "values": {"T": "abc"}}):
         task_file = client.post(url + "/v1/tasks/sample", {})
-        done = client.post(url + "/v1/results", {"ticket": task_file["ticket"], "image": "nekaise-env:1", **bad})
+        done = client.post(url + "/v1/results", {"ticket": task_file["ticket"], "image": "fjallstation-env:1", **bad})
         assert done["status"] == "result not valid" and done["reward"] == 0.0
 
 
@@ -269,7 +269,7 @@ def test_the_shell_line_of_a_command_keeps_the_exit_code_cuts_the_output_and_sto
 
     def run(command, seconds=20, limit=100):
         started = time.monotonic()
-        done = subprocess.run(["bash", "-c", client.RUN, "nekaise", str(seconds), command, str(limit)], capture_output=True, timeout=30)
+        done = subprocess.run(["bash", "-c", client.RUN, "fjallstation", str(seconds), command, str(limit)], capture_output=True, timeout=30)
         return done.returncode, done.stdout, done.stderr, time.monotonic() - started
 
     assert run("echo hello; echo problem >&2; exit 3")[:3] == (3, b"hello\nproblem\n", b"")
@@ -282,6 +282,6 @@ def test_the_shell_line_of_a_command_keeps_the_exit_code_cuts_the_output_and_sto
 def test_output_of_a_command_that_is_not_text_does_not_stop_the_client(server, monkeypatch):
     real = client.subprocess.run
     monkeypatch.setattr(client.subprocess, "run", lambda command, **kw: real(["printf", r"caf\303\251 \377\376 end"], **{k: v for k, v in kw.items() if k != "input"}))
-    env = nekaise.Env(server[0])
+    env = fjallstation.Env(server[0])
     env.task = client.Task("t", "p", "M", "c")
     assert env.exec("cat file.bin").output.startswith("café ") and env.exec("x").output.endswith(" end")

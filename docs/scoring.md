@@ -47,4 +47,4 @@ result.feedback   # the status
 
 The container of the user simulates the model, and the server does not simulate it again. So the reward is a training signal. It is not a trusted score: a person who has the data folder has the reference values too.
 
-The rule is in one file, `src/nekaise/score.py`.
+The rule is in one file, `src/fjallstation/score.py`.

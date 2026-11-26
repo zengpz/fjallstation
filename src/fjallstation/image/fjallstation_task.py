@@ -1,8 +1,8 @@
 #!/usr/bin/python3 -I
 """The two commands of the task image. With them the container works with any program; no other code is needed.
 
-    nekaise-task start  [task file]      at the start of an episode, as root
-    nekaise-task submit [model file]     at the end of an episode, as root; prints the result file
+    fjallstation-task start  [task file]      at the start of an episode, as root
+    fjallstation-task submit [model file]     at the end of an episode, as root; prints the result file
 
 `start` reads the task file that the server gave (a path, or standard input). It removes the library files that
 hold the answer of the task, puts the data files of the task into /work/data, and keeps the task file.
@@ -31,8 +31,8 @@ import sys
 import tempfile
 import time
 
-IMAGE = os.environ.get("NEKAISE_IMAGE", "nekaise-env:1")
-TASK_FILE = "/etc/nekaise/task.json"
+IMAGE = os.environ.get("FJALLSTATION_IMAGE", "fjallstation-env:1")
+TASK_FILE = "/etc/fjallstation/task.json"
 DATA_FOLDER = "/work/data"
 LIBRARY_ROOT = "/opt/omlibrary"
 TIME_LIMIT = 1800                        # seconds for the compilation and the simulation of one model
@@ -264,7 +264,7 @@ def submit(code: str, task: dict, run=run_omc) -> dict:
         return done("no model")
     if any(name in code for name in task["run"].get("forbidden", [])):
         return done("uses the source example")
-    folder = tempfile.mkdtemp(prefix="nekaise-submit-")           # for this user only; the agent cannot reach it
+    folder = tempfile.mkdtemp(prefix="fjallstation-submit-")           # for this user only; the agent cannot reach it
     try:
         with open(os.path.join(folder, "model.mo"), "w", encoding="utf-8") as f:
             f.write(code)
@@ -284,18 +284,18 @@ def submit(code: str, task: dict, run=run_omc) -> dict:
 
 def main(argv: list) -> int:
     if len(argv) < 2 or argv[1] not in ("start", "submit"):
-        print(__doc__.strip().split("\n\n")[0] + "\n\n    nekaise-task start [task file]\n    nekaise-task submit [model file]", file=sys.stderr)
+        print(__doc__.strip().split("\n\n")[0] + "\n\n    fjallstation-task start [task file]\n    fjallstation-task submit [model file]", file=sys.stderr)
         return 2
     source = argv[2] if len(argv) > 2 and argv[2] != "-" else None
     text = (open(source, "rb") if source else sys.stdin.buffer).read().decode("utf-8", errors="replace")
     if os.geteuid() != 0:
-        print("nekaise-task: run this command as root (for example: docker exec -u 0 ...).", file=sys.stderr)
+        print("fjallstation-task: run this command as root (for example: docker exec -u 0 ...).", file=sys.stderr)
         return 1
     if argv[1] == "start":
         try:
             print(json.dumps(start(json.loads(text))))
         except ValueError as fault:                              # not JSON, or a value that is not allowed
-            print(f"nekaise-task: {fault}", file=sys.stderr)
+            print(f"fjallstation-task: {fault}", file=sys.stderr)
             return 1
         return 0
     with open(TASK_FILE, encoding="utf-8") as f:

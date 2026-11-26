@@ -1,12 +1,12 @@
-"""The two commands of the task image (nekaise/image/nekaise_task.py), tested without a container."""
+"""The two commands of the task image (fjallstation/image/fjallstation_task.py), tested without a container."""
 import json
 import os
 from pathlib import Path
 
 import pytest
 
-from nekaise import image, score
-from nekaise.image import nekaise_task as command
+from fjallstation import image, score
+from fjallstation.image import fjallstation_task as command
 
 TASK = {"ticket": "abc123", "address": "http://server/v1/results", "task": "t-1", "model_name": "Room",
         "run": {"msl": "4.1.0", "libraries": ["Buildings 13.0.0"], "hidden_classes": ["Buildings.Fluid.Examples.Room"], "forbidden": ["Fluid.Examples.Room"],
@@ -110,11 +110,11 @@ def test_a_result_that_is_a_link_a_pipe_or_too_large_is_not_read(tmp_path):
 
 
 def test_the_commands_need_root_and_name_their_use(capsys, monkeypatch):
-    assert command.main(["nekaise-task"]) == 2 and "nekaise-task submit" in capsys.readouterr().err
+    assert command.main(["fjallstation-task"]) == 2 and "fjallstation-task submit" in capsys.readouterr().err
     monkeypatch.setattr(command.os, "geteuid", lambda: 1000)
     import io
     monkeypatch.setattr(command.sys, "stdin", type("In", (), {"buffer": io.BytesIO(b"{}")})())
-    assert command.main(["nekaise-task", "start"]) == 1 and "as root" in capsys.readouterr().err
+    assert command.main(["fjallstation-task", "start"]) == 1 and "as root" in capsys.readouterr().err
 
 
 def test_a_task_file_with_a_value_that_could_change_the_script_is_refused(tmp_path, capsys, monkeypatch):

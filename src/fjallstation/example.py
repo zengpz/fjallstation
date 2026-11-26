@@ -1,10 +1,10 @@
 """A small example store, to try the tool kit without other data.
 
-    nekaise example ./store
+    fjallstation example ./store
 
 It writes three text rows, two chats and two Env tasks in the format of docs/data.md. The reference outputs of
 the tasks come from a simulation of the reference models in the task image, so build the image first
-(`nekaise image`). Read this file as the pattern for a task set of your own.
+(`fjallstation image`). Read this file as the pattern for a task set of your own.
 """
 
 import json
@@ -13,7 +13,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from nekaise import image
+from fjallstation import image
 
 MSL = "4.1.0"
 FOOTER = "\n\nWrite the complete Modelica model `{name}` in one file. Environment: Modelica Standard Library {msl}."

@@ -1,10 +1,10 @@
 # The task image: OpenModelica with the Modelica libraries of the tasks, and the two commands
-# `nekaise-task start` and `nekaise-task submit` (see nekaise_task.py).
+# `fjallstation-task start` and `fjallstation-task submit` (see fjallstation_task.py).
 # The agent of a user works in a container of this image. At the end the container itself tries the model of
 # the agent and makes the result file that goes to the server. The image holds no task and no reference
 # outputs. A container needs no network.
 #
-#   nekaise image          (or: docker build -t nekaise-env:1 <this folder>)
+#   fjallstation image          (or: docker build -t fjallstation-env:1 <this folder>)
 FROM openmodelica/openmodelica:v1.27.0-minimal
 
 RUN apt-get update \
@@ -24,12 +24,12 @@ RUN mkdir -p /opt/om \
  && mkdir -p /work && chmod 1777 /work
 
 # The two commands. They belong to root; the agent works as a normal user and cannot change them.
-COPY nekaise_task.py /usr/local/bin/nekaise-task
-RUN chmod 755 /usr/local/bin/nekaise-task && mkdir -p /etc/nekaise && chmod 755 /etc/nekaise
+COPY fjallstation_task.py /usr/local/bin/fjallstation-task
+RUN chmod 755 /usr/local/bin/fjallstation-task && mkdir -p /etc/fjallstation && chmod 755 /etc/fjallstation
 
-# NEKAISE_IMAGE is the version that a result file names. Change it together with the tag of the image.
+# FJALLSTATION_IMAGE is the version that a result file names. Change it together with the tag of the image.
 ENV OPENMODELICALIBRARY=/opt/omlibrary \
     HOME=/tmp \
-    NEKAISE_IMAGE=nekaise-env:1
+    FJALLSTATION_IMAGE=fjallstation-env:1
 WORKDIR /work
 CMD ["sleep", "infinity"]

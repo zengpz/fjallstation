@@ -1,6 +1,6 @@
 """Score a result: compare the output values of a model with the reference outputs of its task.
 
-The server runs no simulation. The container of the user simulates the model with the command `nekaise-task
+The server runs no simulation. The container of the user simulates the model with the command `fjallstation-task
 submit` of the task image and sends the result file: the status of the try and the values of the required
 outputs at the fixed time steps. The server compares these values with the reference outputs of the task.
 
@@ -22,7 +22,7 @@ import numpy as np
 LIMIT = 0.01            # largest NRMSE of a correct output, for a task that names no limit of its own
 EPS = 1e-12             # smallest range used as the divisor, for an output that is almost constant
 # The reward of the OpenModelica part, by the status in the result file. The same table is in the image
-# (image/nekaise_task.py); the server uses its own copy and not the number in the result file.
+# (image/fjallstation_task.py); the server uses its own copy and not the number in the result file.
 OMC_REWARD = {"no model": 0.0, "uses the source example": 0.0, "did not load": 0.0,
               "check failed": 0.1,
               "simulation failed": 0.2, "simulation stopped early": 0.2, "time limit": 0.2,

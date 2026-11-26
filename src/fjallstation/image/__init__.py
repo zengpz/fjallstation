@@ -1,9 +1,9 @@
-"""The task image: OpenModelica, the Modelica libraries of the tasks and the command `nekaise-task`.
+"""The task image: OpenModelica, the Modelica libraries of the tasks and the command `fjallstation-task`.
 
-    nekaise image                      builds the image from the files of this folder
+    fjallstation image                      builds the image from the files of this folder
 
 `try_model` runs one model in a fresh container, with the same two commands that an episode uses. Use it to
-make the reference outputs of a task of your own (see `nekaise/example.py`).
+make the reference outputs of a task of your own (see `fjallstation/example.py`).
 """
 
 import json
@@ -12,9 +12,9 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from nekaise import score
+from fjallstation import score
 
-IMAGE = "nekaise-env:1"                  # the tag of the image; a result file names it
+IMAGE = "fjallstation-env:1"                  # the tag of the image; a result file names it
 FOLDER = Path(__file__).parent
 TIME_LIMIT = 1800                        # seconds for the compilation and the simulation of one model
 
@@ -35,14 +35,14 @@ def try_model(code: str, spec: dict, files: dict | None = None, image: str = IMA
 
     Raises RuntimeError when the container cannot start or gives no result file; that is not a result of the model.
     """
-    with tempfile.TemporaryDirectory(prefix="nekaise-try-") as folder:
+    with tempfile.TemporaryDirectory(prefix="fjallstation-try-") as folder:
         Path(folder, "task.json").write_text(json.dumps(task_file(spec, files=files)), encoding="utf-8")
         Path(folder, "model.mo").write_text(code, encoding="utf-8")
         Path(folder).chmod(0o755)
-        container = f"nekaise-try-{secrets.token_hex(6)}"
+        container = f"fjallstation-try-{secrets.token_hex(6)}"
         command = ["docker", "run", "--rm", "--name", container, "--network", "none", "--cpus", str(cpus), "--memory", memory,
                    "--pids-limit", "512", "-v", f"{folder}:/input:ro", image, "sh", "-c",
-                   "nekaise-task start /input/task.json > /dev/null && nekaise-task submit /input/model.mo"]
+                   "fjallstation-task start /input/task.json > /dev/null && fjallstation-task submit /input/model.mo"]
         try:
             done = subprocess.run(command, capture_output=True, text=True, timeout=TIME_LIMIT + 300)
         finally:

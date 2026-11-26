@@ -1,5 +1,5 @@
 [project]
-name = "nekaise"
+name = "fjallstation"
 version = "0.1.0"
 description = "Fjällstation: a tool kit to train LLM agents for the built environment. Data loaders, a task environment and a reward server."
 readme = "README.md"
@@ -19,7 +19,7 @@ dependencies = ["datasets>=4.0", "numpy", "pyarrow"]
 dev = ["pytest"]
 
 [project.scripts]
-nekaise = "nekaise.__main__:main"
+fjallstation = "fjallstation.__main__:main"
 
 [project.urls]
 Repository = "https://github.com/zengpz/fjallstation"
@@ -29,7 +29,7 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/nekaise"]
+packages = ["src/fjallstation"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

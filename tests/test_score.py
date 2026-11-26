@@ -1,6 +1,6 @@
 import math
 
-from nekaise import score
+from fjallstation import score
 
 SPEC = {"model_name": "Room", "msl": "4.1.0", "libraries": ["Buildings 13.0.0"],
         "eval": {"start_time": 0, "stop_time": 10, "interval": 1, "tolerance": 1e-6, "outputs": ["T", "Q"]},

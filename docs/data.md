@@ -1,6 +1,6 @@
 # The data folder
 
-All data is in one folder, the store. `NEKAISE_STORE` names it for `Corpus()` and `Instruct()`; `nekaise server --store` names it for the server. The default of both is `./store`.
+All data is in one folder, the store. `FJALLSTATION_STORE` names it for `Corpus()` and `Instruct()`; `fjallstation server --store` names it for the server. The default of both is `./store`.
 
 ```
 store/
@@ -9,7 +9,7 @@ store/
   env/tasks-<name>/part-*.parquet   tasks of Env
 ```
 
-A set is a folder with one or more Parquet part files. You can have many sets and any of the three parts. `nekaise example ./store` writes a small store of this form; [`example.py`](https://github.com/zengpz/fjallstation/blob/main/src/nekaise/example.py) is the pattern for your own.
+A set is a folder with one or more Parquet part files. You can have many sets and any of the three parts. `fjallstation example ./store` writes a small store of this form; [`example.py`](https://github.com/zengpz/fjallstation/blob/main/src/fjallstation/example.py) is the pattern for your own.
 
 ## Text: `corpus`
 
@@ -69,7 +69,7 @@ The server checks each task when it starts, and it names the task and the reason
 A task needs reference values. Take them from a reference model that you simulate in the task image, or from measured data.
 
 ```python
-from nekaise import image
+from fjallstation import image
 
 result = image.try_model(reference_code, spec)   # one fresh container: load, check, simulate
 result["status"]                                 # "simulated" when the model ran to the stop time

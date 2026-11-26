@@ -1,6 +1,6 @@
 """The client side of Env: a task from the server, a container to work in, and the reward.
 
-    env    = nekaise.Env()
+    env    = fjallstation.Env()
     task   = env.reset()               # task.prompt: the modelling task; a container is started for it
     env.exec("omc --version")          # the agent of the user works in the container (task.container)
     result = env.step(model_code)      # result.reward, result.omc, result.scorer, result.feedback
@@ -8,10 +8,10 @@
 This class is a small client. It does four steps that any program can do:
 
 1. It asks the server for a task and gets a task file (with a ticket and the address for the result).
-2. It starts a container of the task image with no network, and runs `nekaise-task start` in it. This command
+2. It starts a container of the task image with no network, and runs `fjallstation-task start` in it. This command
    of the image removes the library files that hold the answer and puts the data files of the task into
    /work/data.
-3. After the agent has worked, it runs `nekaise-task submit` in the container. This command tries the model
+3. After the agent has worked, it runs `fjallstation-task submit` in the container. This command tries the model
    (load, check, simulate) and prints the result file: the status, the reward of the OpenModelica part, and the
    output values at the fixed time steps.
 4. It sends the result file to the server. The server compares the values with the reference outputs and
@@ -75,12 +75,12 @@ def post(address: str, body: dict, timeout: int = 600) -> dict:
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"The server refused the request ({e.code}): {e.read().decode(errors='replace')[:300]}") from None
     except urllib.error.URLError as e:
-        raise ConnectionError(f"No answer from the server at {address}: {e.reason}. Start it with: nekaise server --store <folder>") from None
+        raise ConnectionError(f"No answer from the server at {address}: {e.reason}. Start it with: fjallstation server --store <folder>") from None
 
 
 class Env:
     def __init__(self, url: str | None = None, timeout: int = 3600, cpus: float = 2, memory: str = "8g"):
-        self.url = (url or os.environ.get("NEKAISE_SERVER") or DEFAULT_SERVER).rstrip("/")
+        self.url = (url or os.environ.get("FJALLSTATION_SERVER") or DEFAULT_SERVER).rstrip("/")
         self.timeout, self.cpus, self.memory = timeout, cpus, memory
         self.task: Task | None = None
         self.result_file: dict | None = None        # the result file of the last submission, until the server has it
@@ -92,12 +92,12 @@ class Env:
         """A new task from the server and a fresh container for it. `task` asks for one task by its id."""
         self.close()
         task_file = self._post("/v1/tasks/sample", {"task": task} if task else {})
-        container = f"nekaise-env-{task_file['ticket'][:12]}"
+        container = f"fjallstation-env-{task_file['ticket'][:12]}"
         _docker("run", "-d", "--rm", "--name", container, "--network", "none", "--cpus", str(self.cpus), "--memory", self.memory,
                 "--pids-limit", "512", "--user", AGENT, task_file["image"], "sleep", "infinity")
         self.task = Task(task_file["task"], task_file["prompt"], task_file["model_name"], container)
         try:
-            _docker("exec", "-i", "-u", "0", container, "nekaise-task", "start", input=json.dumps(task_file))
+            _docker("exec", "-i", "-u", "0", container, "fjallstation-task", "start", input=json.dumps(task_file))
         except Exception:
             self.close()                                         # no container stays when the start fails
             raise
@@ -113,7 +113,7 @@ class Env:
         if self.task is None:
             raise RuntimeError("No task is open. Call reset() first.")
         try:
-            done = _docker("exec", "-w", "/work", self.task.container, "bash", "-c", RUN, "nekaise", str(int(timeout)), command,
+            done = _docker("exec", "-w", "/work", self.task.container, "bash", "-c", RUN, "fjallstation", str(int(timeout)), command,
                            str(int(max_output)), timeout=timeout + 60, check=False)
         except subprocess.TimeoutExpired:
             return Run(124, f"The command did not end in {timeout} seconds.")
@@ -129,7 +129,7 @@ class Env:
         if self.task is None:
             raise RuntimeError("No task is open. Call reset() first.")
         try:
-            done = _docker("exec", "-i", "-u", "0", self.task.container, "nekaise-task", "submit", input=model_code, timeout=self.timeout)
+            done = _docker("exec", "-i", "-u", "0", self.task.container, "fjallstation-task", "submit", input=model_code, timeout=self.timeout)
             self.result_file = json.loads(done.stdout)
         finally:
             self.close()                                         # the result file holds all that the server needs
