@@ -3,7 +3,7 @@
     fjallstation image                      builds the image from the files of this folder
 
 `try_model` runs one model in a fresh container, with the same two commands that an episode uses. Use it to
-make the reference outputs of a task of your own (see `fjallstation/example.py`).
+make the reference outputs of a task of your own (see docs/data.md).
 """
 
 import json

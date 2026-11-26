@@ -23,7 +23,7 @@ You need Python 3.10 or later and Docker. Tested on Linux.
 ```bash
 pip install fjallstation
 fjallstation image                    # build the task image; the first build takes some minutes
-fjallstation example ./store          # a small example store, to try things
+fjallstation example ./store          # the example store: five texts, five chats, five tasks
 fjallstation server --store ./store   # the server; keep it running in this terminal
 ```
 
@@ -38,7 +38,7 @@ for row in fjallstation.Instruct():
     print(row["messages"])
 
 env = fjallstation.Env()
-task = env.reset("example-heatedroom")   # a task and a fresh container; env.reset() gives a random task
+task = env.reset("example-heated-room")  # a task and a fresh container; env.reset() gives a random task
 print(task.prompt)
 print(env.exec("omc --version").output)  # your agent works in the container
 
@@ -57,10 +57,10 @@ print(result.reward, result.feedback)    # 1.0 correct
 
 ## Documents
 
-- [The data folder](https://github.com/zengpz/fjallstation/blob/main/docs/data.md): the format, and how to make tasks of your own.
+- [The data folder](https://github.com/zengpz/fjallstation/blob/main/docs/data.md): the format, the examples, and how to make tasks of your own.
 - [One episode, step by step](https://github.com/zengpz/fjallstation/blob/main/docs/protocol.md): the same episode with a shell, who runs as whom, and use on several machines.
 - [The reward](https://github.com/zengpz/fjallstation/blob/main/docs/scoring.md): the two parts of the reward and the rule behind them.
 
 ## Licence
 
-Apache 2.0, see [LICENSE](https://github.com/zengpz/fjallstation/blob/main/LICENSE). The task image installs OpenModelica and Modelica libraries; they have their own licences.
+Apache 2.0, see [LICENSE](https://github.com/zengpz/fjallstation/blob/main/LICENSE). The task image installs OpenModelica and Modelica libraries; they have their own licences. Two example tasks use open datasets under CC BY 4.0; their credit is in the task text and in the data document.
