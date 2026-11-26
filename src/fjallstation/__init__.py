@@ -1,4 +1,4 @@
-"""fjallstation: train LLM agents for the built environment.
+"""fjallstation: a data and RL environment API for LLM agents in the built environment.
 
     import fjallstation
 

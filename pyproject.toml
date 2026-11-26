@@ -1,7 +1,7 @@
 [project]
 name = "fjallstation"
 version = "0.1.0"
-description = "Fjällstation: a tool kit to train LLM agents for the built environment. Data loaders, a task environment and a reward server."
+description = "A data and RL environment API for LLM agents in the built environment."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
