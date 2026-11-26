@@ -6,11 +6,11 @@ A data and RL environment API for LLM training in the built environment.
 
 ## What you get
 
-| Call | What the model gets | For |
-|---|---|---|
-| `fjallstation.Corpus()` | text to read: domain knowledge | training on raw text |
-| `fjallstation.Instruct()` | chats to follow: questions with answers | supervised fine-tuning (SFT) |
-| `fjallstation.Env()` | tasks to do: modelling work with a reward | reinforcement learning (RL) |
+| Call | What you get |
+|---|---|
+| `fjallstation.Corpus()` | domain text, for training on raw text |
+| `fjallstation.Instruct()` | chats with questions and answers, for supervised fine-tuning (SFT) |
+| `fjallstation.Env()` | modelling tasks with a reward, for reinforcement learning (RL) |
 
 `Env()` runs on two more parts of the package: a task image (OpenModelica with its libraries) and a server (it gives the tasks and the rewards).
 
