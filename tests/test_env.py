@@ -285,3 +285,21 @@ def test_output_of_a_command_that_is_not_text_does_not_stop_the_client(server, m
     env = fjallstation.Env(server[0])
     env.task = client.Task("t", "p", "M", "c")
     assert env.exec("cat file.bin").output.startswith("café ") and env.exec("x").output.endswith(" end")
+
+
+def test_a_machine_with_no_docker_or_with_no_task_image_gets_a_clear_message(server, monkeypatch):
+    def no_docker(command, **kw):
+        raise FileNotFoundError("docker")
+
+    monkeypatch.setattr(client.subprocess, "run", no_docker)
+    with pytest.raises(RuntimeError, match="Docker was not found"):
+        fjallstation.Env(server[0]).reset()
+
+    def no_image(command, **kw):
+        class Done:
+            returncode, stdout, stderr = (125, "", "Unable to find image 'fjallstation-env:1' locally\npull access denied") if command[1] == "run" else (0, "", "")
+        return Done()
+
+    monkeypatch.setattr(client.subprocess, "run", no_image)
+    with pytest.raises(RuntimeError, match="fjallstation image"):
+        fjallstation.Env(server[0]).reset()

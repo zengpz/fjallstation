@@ -60,8 +60,13 @@ class Run:
 
 
 def _docker(*args: str, timeout: int | None = None, check: bool = True, input: str | None = None) -> subprocess.CompletedProcess:
-    done = subprocess.run(["docker", *args], capture_output=True, encoding="utf-8", errors="replace", timeout=timeout, input=input)
+    try:
+        done = subprocess.run(["docker", *args], capture_output=True, encoding="utf-8", errors="replace", timeout=timeout, input=input)
+    except FileNotFoundError:
+        raise RuntimeError("Docker was not found on this machine. Env() needs Docker.") from None
     if check and done.returncode != 0:
+        if "Unable to find image" in done.stderr or "pull access denied" in done.stderr:
+            raise RuntimeError("The task image is not on this machine. Build it with: fjallstation image")
         raise RuntimeError(f"docker {args[0]} failed: {done.stderr.strip()[:500]}")
     return done
 

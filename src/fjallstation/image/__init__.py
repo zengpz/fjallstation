@@ -21,7 +21,12 @@ TIME_LIMIT = 1800                        # seconds for the compilation and the s
 
 def build() -> None:
     """Build the task image with Docker. The first build takes some minutes."""
-    subprocess.run(["docker", "build", "-t", IMAGE, str(FOLDER)], check=True)
+    try:
+        subprocess.run(["docker", "build", "-t", IMAGE, str(FOLDER)], check=True)
+    except FileNotFoundError:
+        raise SystemExit("Docker was not found on this machine. The task image needs Docker.") from None
+    except subprocess.CalledProcessError as fault:
+        raise SystemExit(f"The build of the task image did not end well (docker build, exit code {fault.returncode}).") from None
 
 
 def task_file(spec: dict, name: str = "", files: dict | None = None) -> dict:

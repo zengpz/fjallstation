@@ -76,3 +76,19 @@ def test_the_command_builds_the_image_writes_the_example_and_starts_the_server(t
     assert calls[-1] == (5, "127.0.0.1", 8099)
     with pytest.raises(SystemExit):
         main([])
+
+
+def test_the_image_command_says_when_docker_is_missing_or_the_build_fails(monkeypatch):
+    def missing(command, **kw):
+        raise FileNotFoundError("docker")
+
+    monkeypatch.setattr(image.subprocess, "run", missing)
+    with pytest.raises(SystemExit, match="Docker was not found"):
+        main(["image"])
+
+    def fails(command, **kw):
+        raise image.subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(image.subprocess, "run", fails)
+    with pytest.raises(SystemExit, match="did not end well"):
+        main(["image"])
