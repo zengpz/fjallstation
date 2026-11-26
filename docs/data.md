@@ -36,6 +36,8 @@ The two tasks from measured data use open datasets under CC BY 4.0. The task tex
 
 ## Text: `corpus`
 
+`Corpus()` gives the rows one after the other, as a streaming `datasets` object of Hugging Face.
+
 | Column | Content |
 |---|---|
 | `id` | a name for the row |
@@ -43,6 +45,8 @@ The two tasks from measured data use open datasets under CC BY 4.0. The task tex
 | `source` | where the text comes from, in one word |
 
 ## Chats: `instruct`
+
+`Instruct()` gives all rows, as a `datasets` object of Hugging Face.
 
 | Column | Content |
 |---|---|

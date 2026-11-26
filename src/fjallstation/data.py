@@ -32,7 +32,7 @@ def Instruct():
 
 
 def Corpus():
-    """Domain text for pretraining and mid-training.
+    """Domain text for mid-training: more training of a pretrained model on the text of one domain.
 
     Returns a Hugging Face `datasets.IterableDataset`, the streaming form: a loop reads the rows from
     the files and does not load them all. Each row has `id`, `text` and `source`.

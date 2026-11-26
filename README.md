@@ -6,13 +6,13 @@ A data and RL environment API for LLM training in the built environment.
 
 ## What you get
 
-| Part | What it does |
-|---|---|
-| `fjallstation.Corpus()` | domain text for pretraining, as a Hugging Face dataset |
-| `fjallstation.Instruct()` | chats for fine-tuning, as a Hugging Face dataset |
-| `fjallstation.Env()` | modelling tasks in Modelica: a container to work in, and a reward |
-| Task image | OpenModelica with the libraries of the tasks |
-| Server | gives the tasks and the rewards |
+| Call | What the model gets | For |
+|---|---|---|
+| `fjallstation.Corpus()` | text to read: domain knowledge | mid-training |
+| `fjallstation.Instruct()` | chats to follow: questions with answers | fine-tuning |
+| `fjallstation.Env()` | tasks to do: modelling work with a reward | reinforcement learning |
+
+`Env()` runs on two more parts of the package: a task image (OpenModelica with its libraries) and a server (it gives the tasks and the rewards).
 
 You bring the data: one folder in a [simple format](https://github.com/zengpz/fjallstation/blob/main/docs/data.md). The same parts run on one workstation or on several machines.
 
@@ -34,7 +34,7 @@ import fjallstation
 
 llm = load_your_llm()
 
-# 1. Pretraining on domain text
+# 1. Mid-training on domain text
 for doc in fjallstation.Corpus():
     llm.train_on_text(doc["text"])
 
