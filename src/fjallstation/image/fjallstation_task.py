@@ -31,7 +31,7 @@ import sys
 import tempfile
 import time
 
-IMAGE = os.environ.get("FJALLSTATION_IMAGE", "fjallstation-env:1")
+IMAGE = os.environ.get("FJALLSTATION_IMAGE", "fjallstation-env:2")
 TASK_FILE = "/etc/fjallstation/task.json"
 DATA_FOLDER = "/work/data"
 LIBRARY_ROOT = "/opt/omlibrary"
@@ -165,12 +165,18 @@ def read_regular(path: str, limit: int, head: bool = False):
 
 def read_csv(text: str) -> dict:
     """The result table of a simulation: one list of numbers for each column, with the column `time`."""
-    rows = list(csv.reader(text.splitlines()))
+    rows = list(csv.reader(text.splitlines(), strict=True))
+    if not rows:
+        raise ValueError("empty result table")
     names = [n.strip().strip('"') for n in rows[0]]
+    if "time" not in names or not all(names) or len(set(names)) != len(names):
+        raise ValueError("result columns must have unique names, including time")
     table = {n: [] for n in names}
     for row in rows[1:]:
-        if len(row) < len(names):
+        if not row or (len(row) == 1 and not row[0].strip()):
             continue
+        if len(row) != len(names):
+            raise ValueError("result row does not match the columns")
         for n, x in zip(names, row):
             try:
                 table[n].append(float(x))
@@ -189,13 +195,23 @@ def on_steps(table: dict, name: str, steps: list) -> list:
     """The values of one output at the fixed time steps.
 
     A simulation also writes rows at its events, two rows with the same time at each one. These extra rows are
-    not used. At a time step that is also an event, the value after the event counts. A time step with no row
-    gets the value between its two neighbours; that is rare.
+    not used. At a time step that is also an event, the value after the event counts. Every time step must
+    have a row, within one millionth of the output interval. Missing samples are never interpolated.
     """
     import numpy as np
     t, y = np.asarray(table["time"], float), np.asarray(table[name], float)
+    if not len(t):
+        raise ValueError("empty result table")
     last = np.append(t[1:] != t[:-1], True)                       # the last row of each time
-    return np.interp(np.asarray(steps, float), t[last], y[last]).tolist()
+    t, y = t[last], y[last]
+    steps = np.asarray(steps, float)
+    right = np.minimum(np.searchsorted(t, steps), len(t) - 1)
+    left = np.maximum(right - 1, 0)
+    nearest = np.where(abs(t[right] - steps) <= abs(t[left] - steps), right, left)
+    tolerance = 1e-6 * (steps[1] - steps[0]) if len(steps) > 1 else 0.0
+    if not np.all(abs(t[nearest] - steps) <= tolerance):
+        raise ValueError("result is missing a required time step")
+    return y[nearest].tolist()
 
 
 def read_run(log, result_path: str, task: dict) -> tuple:
@@ -214,7 +230,7 @@ def read_run(log, result_path: str, task: dict) -> tuple:
         return "simulation failed", None
     try:
         table = read_csv(text)
-    except IndexError:
+    except (ValueError, csv.Error):
         return "simulation failed", None
     ev = run["eval"]
     times = table.get("time") or []
@@ -225,6 +241,10 @@ def read_run(log, result_path: str, task: dict) -> tuple:
         return "simulation failed", None
     if table["time"][-1] < ev["stop_time"] - 1e-6 * ev["interval"]:
         return "simulation stopped early", None
+    try:
+        on_steps(table, "time", time_steps(ev))                  # each scoring time needs an actual row
+    except ValueError:
+        return "simulation failed", None
     return "simulated", table
 
 

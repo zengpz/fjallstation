@@ -43,7 +43,7 @@ print(result.reward, result.feedback)    # 1.0 correct
 
 ```bash
 curl -s -X POST http://127.0.0.1:8040/v1/tasks/sample -d '{}' > task.json
-docker run -d --name episode --network none --pids-limit 512 --user 1000:1000 fjallstation-env:1
+docker run -d --name episode --network none --pids-limit 512 --user 1000:1000 fjallstation-env:2
 docker exec -i -u 0 episode fjallstation-task start < task.json
 
 # ... the agent works: docker exec -w /work episode bash -c "<command>" ...

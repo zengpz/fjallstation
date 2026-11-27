@@ -14,7 +14,7 @@ from pathlib import Path
 
 from fjallstation import score
 
-IMAGE = "fjallstation-env:1"                  # the tag of the image; a result file names it
+IMAGE = "fjallstation-env:2"                  # the tag of the image; a result file names it
 FOLDER = Path(__file__).parent
 TIME_LIMIT = 1800                        # seconds for the compilation and the simulation of one model
 

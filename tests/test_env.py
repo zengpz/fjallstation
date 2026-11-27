@@ -62,7 +62,7 @@ def test_a_task_a_container_and_the_reward_in_two_parts(server, docker):
     task = env.reset()
     assert task.prompt.startswith("Build room") and task.model_name == "Room" and task.container.startswith("fjallstation-env-")
     run, start = calls[0], calls[1]
-    assert run[:2] == ["docker", "run"] and run[run.index("--network") + 1] == "none" and "fjallstation-env:1" in run
+    assert run[:2] == ["docker", "run"] and run[run.index("--network") + 1] == "none" and "fjallstation-env:2" in run
     assert run[run.index("--user") + 1] == "1000:1000" and run[run.index("--pids-limit") + 1] == "512"       # the agent is never root
     assert start == ["docker", "exec", "-i", "-u", "0", task.container, "fjallstation-task", "start"]           # the image hides the files, as root
     task_file = state["task"]
@@ -99,10 +99,10 @@ def test_one_result_for_each_ticket_and_clear_errors(server, docker):
     env = fjallstation.Env(url)
     env.reset()
     env.step("model Room right end Room;")
-    used = {"ticket": docker[1]["task"]["ticket"], "image": "fjallstation-env:1", "status": "simulated", "values": {"T": REF["T"]}}
+    used = {"ticket": docker[1]["task"]["ticket"], "image": "fjallstation-env:2", "status": "simulated", "values": {"T": REF["T"]}}
     again = client.post(url + "/v1/results", used)                # the same result again: the same answer, and no second record
-    with pytest.raises(RuntimeError, match="409.*needs fjallstation-env:1"):
-        client.post(url + "/v1/results", {**used, "image": "fjallstation-env:0"})
+    with pytest.raises(RuntimeError, match="409.*needs fjallstation-env:2"):
+        client.post(url + "/v1/results", {**used, "image": "fjallstation-env:1"})
     assert again["reward"] == 1.0 and again["status"] == "correct" and len((server[1] / "rewards.jsonl").read_text().splitlines()) == 1
     with pytest.raises(RuntimeError, match="409.*result already"):
         client.post(url + "/v1/results", {**used, "values": {"T": [0.0, 0.0, 0.0]}})
@@ -125,18 +125,18 @@ def test_the_answers_of_the_server_hold_no_reference_and_no_error_number(server,
     assert set(task_file) == {"ticket", "address", "task", "prompt", "model_name", "image", "hidden_files", "run"}
     assert "limit" not in task_file["run"] and "reference" not in json.dumps(task_file)
     done = client.post(task_file["address"], {"ticket": task_file["ticket"], "image": task_file["image"], "status": "simulated", "values": {"T": [20.0, 25.0, 30.0]}})
-    assert done == {"reward": 0.0, "omc_reward": 0.3, "status": "outputs differ", "task": task_file["task"], "image": "fjallstation-env:1"}
+    assert done == {"reward": 0.0, "omc_reward": 0.3, "status": "outputs differ", "task": task_file["task"], "image": "fjallstation-env:2"}
 
 
 def test_a_result_of_another_image_version_is_refused_and_does_not_use_up_the_ticket(server, docker):
     (url, data), (calls, state) = server, docker
     env = fjallstation.Env(url)
     env.reset()
-    state["image"] = "fjallstation-env:0"
-    with pytest.raises(RuntimeError, match="409.*needs fjallstation-env:1"):
+    state["image"] = "fjallstation-env:1"
+    with pytest.raises(RuntimeError, match="409.*needs fjallstation-env:2"):
         env.step("model Room right end Room;")
     assert not (data / "rewards.jsonl").exists() and env.result_file is not None
-    env.result_file["image"] = "fjallstation-env:1"
+    env.result_file["image"] = "fjallstation-env:2"
     assert env.send().reward == 1.0
 
 
@@ -169,7 +169,7 @@ def test_the_client_takes_the_reward_parts_from_the_server_and_sends_to_its_own_
     url = server[0]
     env = fjallstation.Env(url)
     env.reset()
-    env.result_file = {"ticket": docker[1]["task"]["ticket"], "address": "http://127.0.0.1:9/elsewhere", "image": "fjallstation-env:1",
+    env.result_file = {"ticket": docker[1]["task"]["ticket"], "address": "http://127.0.0.1:9/elsewhere", "image": "fjallstation-env:2",
                        "status": "simulated", "omc_reward": 999, "values": {"T": [20.0, 25.0, 30.0]}}
     result = env.send()                                           # the address and the reward number of the file are not used
     assert result == client.Result(reward=0.3, feedback="outputs differ", omc=0.3, scorer=0.0)
@@ -209,7 +209,7 @@ def test_a_result_with_fields_of_a_wrong_type_is_not_valid_and_gives_no_server_f
     url = server[0]
     for bad in ({"status": []}, {"status": "simulated", "values": 123}, {"status": "simulated", "values": {"T": "abc"}}):
         task_file = client.post(url + "/v1/tasks/sample", {})
-        done = client.post(url + "/v1/results", {"ticket": task_file["ticket"], "image": "fjallstation-env:1", **bad})
+        done = client.post(url + "/v1/results", {"ticket": task_file["ticket"], "image": "fjallstation-env:2", **bad})
         assert done["status"] == "result not valid" and done["reward"] == 0.0
 
 
@@ -297,7 +297,7 @@ def test_a_machine_with_no_docker_or_with_no_task_image_gets_a_clear_message(ser
 
     def no_image(command, **kw):
         class Done:
-            returncode, stdout, stderr = (125, "", "Unable to find image 'fjallstation-env:1' locally\npull access denied") if command[1] == "run" else (0, "", "")
+            returncode, stdout, stderr = (125, "", "Unable to find image 'fjallstation-env:2' locally\npull access denied") if command[1] == "run" else (0, "", "")
         return Done()
 
     monkeypatch.setattr(client.subprocess, "run", no_image)

@@ -42,12 +42,12 @@ def time_steps(ev: dict) -> np.ndarray:
 
 
 def on_steps(table: dict, name: str, steps: np.ndarray) -> np.ndarray:
-    """The values of one output of a result table at the fixed time steps.
+    """The values of one reference output at the fixed time steps.
 
     A table of a simulation also has rows at its events, two rows with the same time at each one. These extra
     rows are not compared. At a time step that is also an event, the value after the event counts. A time step
-    with no row gets the value between its two neighbours; that is rare. The image has the same function; here
-    it reads the reference outputs of a task set that holds whole tables.
+    with no row gets the value between its two neighbours. This reads stored reference tables only; submitted
+    simulation results must contain every time step and are never interpolated by the image.
     """
     t, y = np.asarray(table["time"], float), np.asarray(table[name], float)
     last = np.append(t[1:] != t[:-1], True)                       # the last row of each time

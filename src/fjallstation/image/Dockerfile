@@ -4,7 +4,7 @@
 # the agent and makes the result file that goes to the server. The image holds no task and no reference
 # outputs. A container needs no network.
 #
-#   fjallstation image          (or: docker build -t fjallstation-env:1 <this folder>)
+#   fjallstation image          (or: docker build -t fjallstation-env:2 <this folder>)
 FROM openmodelica/openmodelica:v1.27.0-minimal
 
 RUN apt-get update \
@@ -30,6 +30,6 @@ RUN chmod 755 /usr/local/bin/fjallstation-task && mkdir -p /etc/fjallstation && 
 # FJALLSTATION_IMAGE is the version that a result file names. Change it together with the tag of the image.
 ENV OPENMODELICALIBRARY=/opt/omlibrary \
     HOME=/tmp \
-    FJALLSTATION_IMAGE=fjallstation-env:1
+    FJALLSTATION_IMAGE=fjallstation-env:2
 WORKDIR /work
 CMD ["sleep", "infinity"]

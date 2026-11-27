@@ -10,10 +10,14 @@ It comes from the container and says how far the model got.
 |---|---|---|
 | is empty, does not load, or uses a forbidden text | `no model`, `did not load`, `uses the source example` | 0 |
 | loads, and the check fails | `check failed` | 0.1 |
-| checks, and the simulation does not reach the stop time | `simulation failed`, `simulation stopped early`, `time limit` | 0.2 |
-| simulates to the stop time | `simulated` | 0.3 |
+| checks, but the simulation fails, stops early, or has an invalid result table | `simulation failed`, `simulation stopped early`, `time limit` | 0.2 |
+| simulates with a valid result table covering every fixed time step | `simulated` | 0.3 |
 
 The time limit for one submission is 30 minutes. `time limit` has the value 0.2 also when the limit ends the load or the check.
+
+The result CSV must have unique, nonempty column names, including `time`. Each nonblank row must have the same number of fields as the header. Every fixed scoring time must have an actual result row, within one millionth of the output interval. Missing rows are not filled by interpolation. Extra rows at simulation events are allowed; at a repeated timestamp, the last value counts. A malformed table or a missing scoring row gives `simulation failed` and no scorer reward. A run that ends before the stop time keeps `simulation stopped early`.
+
+This rule requires image `fjallstation-env:2`. Run `fjallstation image` to build it before using the updated package. The server rejects results from the older image. Stored reference-table alignment is unchanged.
 
 ## The scorer part
 

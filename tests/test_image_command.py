@@ -53,8 +53,8 @@ def test_the_log_gives_the_status(tmp_path):
     assert command.read_run(OK, path, TASK) == ("simulation failed", None)
     Path(path).write_text('"time","T","Q"\n0,20,0\n5,25,500\n')
     assert command.read_run(OK, path, TASK) == ("simulation stopped early", None)          # the result must reach the stop time
-    Path(path).write_text('"time","T","Q"\n0,20,0\n10,30,1000\n')
-    assert command.read_run(OK, path, TASK) == ("simulated", {"time": [0.0, 10.0], "T": [20.0, 30.0], "Q": [0.0, 1000.0]})
+    Path(path).write_text('"time","T","Q"\n0,20,0\n5,25,500\n10,30,1000\n')
+    assert command.read_run(OK, path, TASK) == ("simulated", {"time": [0.0, 5.0, 10.0], "T": [20.0, 25.0, 30.0], "Q": [0.0, 500.0, 1000.0]})
 
 
 def test_only_the_values_at_the_fixed_time_steps_go_into_the_result():
@@ -64,6 +64,56 @@ def test_only_the_values_at_the_fixed_time_steps_go_into_the_result():
     assert command.on_steps(table, "y", [0, 1, 2]) == [0.0, 0.0, 1.0]
     assert command.on_steps({"time": [0, 1, 1, 2], "y": [0, 0, 1, 1]}, "y", [0, 1, 2]) == [0.0, 1.0, 1.0]     # the value after an event counts
     assert command.on_steps(table, "y", [0, 1, 2]) == score.on_steps(table, "y", score.time_steps(ev)).tolist()   # as on the server
+
+
+@pytest.mark.parametrize("text", [
+    'time,T,Q\n0,20,0\n5,25\n10,30,1000\n',                     # short row
+    'time,T,Q\n0,20,0\n5,25,500,99\n10,30,1000\n',              # extra field
+    'time,T,Q\n0,20,0\n10,30,1000\n',                          # no middle sample
+    'time,T,Q\n0,20,0\n4,24,400\n10,30,1000\n',                # same row count, wrong time
+    'time,T,Q\n0,20,0\n4,24,400\n4,24,400\n10,30,1000\n',     # event rows cannot replace a sample
+    'time,T,Q\n0,20,0\n5.001,25,500\n10,30,1000\n',            # outside time tolerance
+    'time,T,Q\n0,20,0\n5,"25,500\n10,30,1000\n',               # malformed quote
+    'time,T,T\n0,20,0\n5,25,500\n10,30,1000\n',                # duplicate header
+    'time,T,\n0,20,0\n5,25,500\n10,30,1000\n',                 # empty column name
+    't,T,Q\n0,20,0\n5,25,500\n10,30,1000\n',                   # no time column
+    'time,T,Q\n',                                              # no samples
+    '',
+])
+def test_invalid_or_incomplete_csv_cannot_get_a_match_reward(text):
+    def run(folder, time_limit):
+        Path(folder, "out_res.csv").write_text(text)
+        return OK
+
+    result = command.submit("model Room end Room;", TASK, run)
+    assert result["status"] == "simulation failed"
+    assert result["omc_reward"] == 0.2 and result["values"] == {}
+    reference = {"T": [20, 25, 30], "Q": [0, 500, 1000]}
+    scored = score.score(result, TASK["run"], reference)
+    assert scored["reward"] == 0.0 and scored["omc_reward"] == 0.2
+
+
+@pytest.mark.parametrize("middle", ["5", "4.999999", "5.000001"])
+def test_complete_grid_with_events_and_roundoff_is_still_correct(middle):
+    def run(folder, time_limit):
+        Path(folder, "out_res.csv").write_text(
+            f'time,T,Q\n0,20,0\n\n  \n3,23,300\n3,24,400\n{middle},24,400\n{middle},25,500\n10,30,1000\n')
+        return OK
+
+    result = command.submit("model Room end Room;", TASK, run)
+    reference = {"T": [20, 25, 30], "Q": [0, 500, 1000]}
+    assert result["status"] == "simulated" and result["values"] == reference
+    assert score.score(result, TASK["run"], reference)["reward"] == 1.0
+
+
+def test_exact_sample_takes_precedence_over_a_nearby_event():
+    table = {"time": [0, 4.999999, 5, 5, 5.000001, 10], "y": [0, 99, 1, 2, 99, 3]}
+    assert command.on_steps(table, "y", [0, 5, 10]) == [0, 2, 3]
+
+
+def test_missing_samples_are_not_interpolated_by_the_image():
+    with pytest.raises(ValueError, match="missing a required time step"):
+        command.on_steps({"time": [0, 10], "y": [20, 30]}, "y", [0, 5, 10])
 
 
 def test_submit_gives_the_result_file_with_the_ticket_the_status_and_the_values():
