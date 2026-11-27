@@ -93,8 +93,13 @@ class Env:
     def _post(self, path: str, body: dict) -> dict:
         return post(self.url + path, body, self.timeout)
 
+    def _require_no_pending_result(self) -> None:
+        if self.result_file is not None:
+            raise RuntimeError("An unsent result is pending. Call send() to retry or discard_result() to discard it.")
+
     def reset(self, task: str | None = None) -> Task:
-        """A new task from the server and a fresh container for it. `task` asks for one task by its id."""
+        """A new task and container. `task` asks for one task by id. Send or discard a pending result first."""
+        self._require_no_pending_result()
         self.close()
         task_file = self._post("/v1/tasks/sample", {"task": task} if task else {})
         container = f"fjallstation-env-{task_file['ticket'][:12]}"
@@ -131,6 +136,7 @@ class Env:
 
     def step(self, model_code: str) -> Result:
         """Submit the model code for the open task. The container tries it; the server scores the result. The episode ends."""
+        self._require_no_pending_result()
         if self.task is None:
             raise RuntimeError("No task is open. Call reset() first.")
         try:
@@ -146,8 +152,13 @@ class Env:
             raise RuntimeError("No result to send. Call step() first.")
         answer = self._post("/v1/results", self.result_file)          # to the server of this client, not to an address from the container
         omc, scorer = float(answer["omc_reward"]), float(answer["reward"])
+        result = Result(reward=1.0 if scorer == 1.0 else omc, feedback=answer["status"], omc=omc, scorer=scorer)
         self.result_file = None
-        return Result(reward=1.0 if scorer == 1.0 else omc, feedback=answer["status"], omc=omc, scorer=scorer)
+        return result
+
+    def discard_result(self) -> None:
+        """Explicitly forget the pending result without sending it. Does nothing when no result is pending."""
+        self.result_file = None
 
     def close(self) -> None:
         """Remove the container of the open task."""

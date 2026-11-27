@@ -149,8 +149,129 @@ def test_a_fault_of_the_server_gives_no_reward_and_the_client_keeps_the_result(s
     with pytest.raises(RuntimeError, match="500.*could not score"):
         env.step("model Room right end Room;")
     assert not (data / "rewards.jsonl").exists() and env.task is None       # the container is gone; the result file is kept
+    pending, calls = env.result_file, len(docker[0])
+    with monkeypatch.context() as blocked:
+        def unexpected_request(*args):
+            pytest.fail("A pending result must block new work before any request")
+        blocked.setattr(env, "_post", unexpected_request)
+        with pytest.raises(RuntimeError, match="pending.*send.*discard_result"):
+            env.reset()
+        with pytest.raises(RuntimeError, match="pending.*send.*discard_result"):
+            env.step("model Room right end Room;")
+    assert env.result_file is pending and len(docker[0]) == calls
+    with pytest.raises(RuntimeError, match="500.*could not score"):
+        env.send()
+    assert env.result_file is pending
     monkeypatch.setattr(score, "score", real)
     assert env.send() == client.Result(1.0, "correct", omc=0.3, scorer=1.0)   # the same result, sent again
+    assert env.result_file is None
+    env.reset()
+    env.close()
+
+
+def test_explicit_discard_allows_a_new_episode_without_sending_the_old_result(server, docker, monkeypatch):
+    url, data = server
+    env = fjallstation.Env(url)
+    env.reset()
+    post = env._post
+
+    def unavailable(*args):
+        raise ConnectionError("delivery unavailable")
+
+    monkeypatch.setattr(env, "_post", unavailable)
+    with pytest.raises(ConnectionError):
+        env.step("model Room right end Room;")
+    old_ticket, calls = env.result_file["ticket"], len(docker[0])
+    env.discard_result()
+    env.discard_result()                                       # no pending result: a harmless no-op
+    assert env.result_file is None and len(docker[0]) == calls
+    assert not (data / "rewards.jsonl").exists()
+    monkeypatch.setattr(env, "_post", post)
+    env.reset()
+    assert env.step("model Room right end Room;").reward == 1.0
+    records = [json.loads(line) for line in (data / "rewards.jsonl").read_text().splitlines()]
+    assert len(records) == 1 and records[0]["ticket"] != old_ticket
+
+
+def test_another_worker_can_finish_while_one_env_has_a_pending_result(server, docker, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    url, data = server
+    waiting = fjallstation.Env(url)
+    waiting.reset()
+    post = waiting._post
+
+    def unavailable(*args):
+        raise ConnectionError("delivery unavailable for this worker")
+
+    monkeypatch.setattr(waiting, "_post", unavailable)
+    with pytest.raises(ConnectionError):
+        waiting.step("model Room right end Room;")
+    pending = waiting.result_file
+
+    def other_worker():
+        with fjallstation.Env(url) as other:
+            other.reset()
+            return other.step("model Room right end Room;")
+
+    with ThreadPoolExecutor(max_workers=1) as workers:
+        assert workers.submit(other_worker).result(timeout=10).reward == 1.0
+    assert waiting.result_file is pending
+    with pytest.raises(RuntimeError, match="pending"):
+        waiting.reset()
+    monkeypatch.setattr(waiting, "_post", post)
+    assert waiting.send().reward == 1.0
+    records = [json.loads(line) for line in (data / "rewards.jsonl").read_text().splitlines()]
+    assert len(records) == 2 and len({r["ticket"] for r in records}) == 2
+
+
+def test_retry_after_a_lost_reply_preserves_the_result_and_does_not_score_twice(server, docker, monkeypatch):
+    url, data = server
+    env = fjallstation.Env(url)
+    env.reset()
+    post = env._post
+
+    def lose_reply(path, body):
+        post(path, body)                                       # the server has already stored the result
+        raise ConnectionError("reply lost")
+
+    monkeypatch.setattr(env, "_post", lose_reply)
+    with pytest.raises(ConnectionError):
+        env.step("model Room right end Room;")
+    pending = env.result_file
+    with pytest.raises(RuntimeError, match="pending"):
+        env.reset()
+    assert env.result_file is pending
+    monkeypatch.setattr(env, "_post", post)
+    assert env.send().reward == 1.0 and env.result_file is None
+    assert len((data / "rewards.jsonl").read_text().splitlines()) == 1
+
+
+def test_context_cleanup_keeps_a_pending_result(server, docker, monkeypatch):
+    env = fjallstation.Env(server[0])
+
+    def unavailable(*args):
+        raise ConnectionError("delivery unavailable")
+
+    with pytest.raises(ConnectionError):
+        with env:
+            env.reset()
+            monkeypatch.setattr(env, "_post", unavailable)
+            env.step("model Room right end Room;")
+    pending, calls = env.result_file, len(docker[0])
+    assert pending is not None and env.task is None
+    env.close()
+    assert env.result_file is pending and len(docker[0]) == calls
+
+
+def test_an_incomplete_server_reply_does_not_clear_the_pending_result(monkeypatch):
+    env = fjallstation.Env()
+    pending = {"ticket": "waiting", "status": "simulated", "values": {"T": REF["T"]}}
+    env.result_file = pending
+    monkeypatch.setattr(env, "_post", lambda *a: {"reward": 1.0, "omc_reward": 0.3})  # missing status
+    with pytest.raises(KeyError):
+        env.send()
+    assert env.result_file is pending
 
 
 def test_requests_that_are_not_json_or_too_large_are_refused(server):

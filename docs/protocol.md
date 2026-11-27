@@ -39,6 +39,14 @@ result = env.step(model)                 # the container tries the model; the se
 print(result.reward, result.feedback)    # 1.0 correct
 ```
 
+## If sending a result fails
+
+When `env.step()` finishes the simulation but cannot deliver its result, that `Env` keeps the result in memory. `reset()` and `step()` refuse to start more work until you send or explicitly discard it. After the server recovers, retry delivery with `result = env.send()`; this does not run the simulation again. Repeated delivery of the same result gives the same answer on the server.
+
+To deliberately abandon the pending result, call `env.discard_result()`. You can then call `env.reset()` for a new episode. Discarding clears the local result; it does not cancel a server ticket or undo a result already received by the server. `env.close()` removes the container and keeps any pending result.
+
+For parallel training, use one `Env` per worker. A pending result blocks only its own instance. Use each instance sequentially. Pending results are held in memory, so they do not survive a client process restart.
+
 ## With a shell
 
 ```bash
