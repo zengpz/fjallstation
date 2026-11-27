@@ -334,6 +334,35 @@ def test_a_result_with_fields_of_a_wrong_type_is_not_valid_and_gives_no_server_f
         assert done["status"] == "result not valid" and done["reward"] == 0.0
 
 
+def test_numeric_overflow_finishes_the_episode_and_the_worker_can_continue(server, docker, monkeypatch):
+    url, data = server
+    env = fjallstation.Env(url)
+    run, payload = client._docker, {}
+
+    def oversized(*args, **kwargs):
+        done = run(*args, **kwargs)
+        if args[-2:] == ("fjallstation-task", "submit"):
+            payload.update(json.loads(done.stdout))
+            payload["values"]["T"][1] = 10 ** 400
+            done.stdout = json.dumps(payload)
+        return done
+
+    with monkeypatch.context() as patch:
+        patch.setattr(client, "_docker", oversized)
+        env.reset()
+        assert env.step("model Room right end Room;") == client.Result(0.3, "result not valid", omc=0.3, scorer=0.0)
+    assert env.task is None and env.result_file is None
+    again = client.post(url + "/v1/results", payload)
+    assert again["status"] == "result not valid" and again["reward"] == 0.0 and again["omc_reward"] == 0.3
+    with pytest.raises(RuntimeError, match="409.*result already"):
+        client.post(url + "/v1/results", {**payload, "values": {"T": REF["T"]}})
+    records = [json.loads(line) for line in (data / "rewards.jsonl").read_text().splitlines()]
+    assert len(records) == 1 and records[0]["status"] == "result not valid" and records[0]["outputs"] == {}
+    env.reset()
+    assert env.step("model Room right end Room;").reward == 1.0
+    assert len((data / "rewards.jsonl").read_text().splitlines()) == 2
+
+
 def test_requests_with_a_length_that_is_not_valid_are_refused(server):
     import http.client
     host, port = server[0].removeprefix("http://").split(":")

@@ -31,6 +31,13 @@ def test_a_missing_output_a_wrong_count_of_values_and_values_that_are_not_number
     assert score.compare({**VALUES, "Q": [math.nan] * 11}, REF, SPEC) == {"reward": 0.0, "status": "outputs differ", "outputs": {"T": 0.0, "Q": math.inf}}
 
 
+def test_oversized_integers_are_invalid_results_with_the_simulation_credit():
+    for value in (10 ** 400, -(10 ** 400)):
+        values = {**VALUES, "T": [value, *REF["T"][1:]]}
+        result = score.score({"status": "simulated", "values": values}, SPEC, REF)
+        assert result == {"reward": 0.0, "status": "result not valid", "outputs": {}, "omc_reward": 0.3}
+
+
 def test_the_reference_of_an_older_task_set_is_read_at_the_fixed_time_steps():
     ev = {"start_time": 0, "stop_time": 2, "interval": 1, "outputs": ["y"]}
     # a whole result table has rows at events: two rows with the same time; the value after the event counts

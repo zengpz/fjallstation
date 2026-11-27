@@ -35,6 +35,8 @@ It comes from the server. The server compares each required output with the refe
 | `output missing` | the model has no variable with a required name | 0 |
 | `result not valid` | the result file does not have the right form | 0 |
 
+An output integer that cannot be converted to the scorer's floating-point format gives `result not valid`. The episode completes with zero scorer reward and keeps the 0.3 OpenModelica part for a `simulated` submission.
+
 ## The reward
 
 `result.reward` is 1.0 for a correct model. For every other model it is the OpenModelica part.

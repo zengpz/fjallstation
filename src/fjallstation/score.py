@@ -77,7 +77,7 @@ def compare(values: dict, reference: dict, spec: dict, limit: float | dict | Non
             continue
         try:
             g = np.asarray(values[name], float)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             return {"reward": 0.0, "status": "result not valid", "outputs": {}}
         if g.shape != (count,):
             return {"reward": 0.0, "status": "result not valid", "outputs": {}}
