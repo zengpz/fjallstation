@@ -39,14 +39,6 @@ result = env.step(model)                 # the container tries the model; the se
 print(result.reward, result.feedback)    # 1.0 correct
 ```
 
-## If sending a result fails
-
-When `env.step()` finishes the simulation but cannot deliver its result, that `Env` keeps the result in memory. `reset()` and `step()` refuse to start more work until you send or explicitly discard it. After the server recovers, retry delivery with `result = env.send()`; this does not run the simulation again. Repeated delivery of the same result gives the same answer while the server retains its ticket.
-
-To deliberately abandon the pending result, call `env.discard_result()`. You can then call `env.reset()` for a new episode. Discarding clears the local result; it does not cancel a server ticket or undo a result already received by the server. `env.close()` removes the container and keeps any pending result.
-
-For parallel training, use one `Env` per worker. A pending result blocks only its own instance. Use each instance sequentially. Pending results are held in memory, so they do not survive a client process restart.
-
 ## With a shell
 
 ```bash
@@ -95,6 +87,10 @@ The result file: `ticket`, `address`, `task`, `image`, `status`, `omc_reward`, `
 - The address is where the result goes. The server writes its own address into the task file, so nothing is configured.
 - The server refuses a result from another image version, because other versions can give other values.
 - The reference values and the error of each output stay on the server.
+
+## When a result cannot be sent
+
+`env.step()` raises the error, and the `Env` keeps the result file. `env.send()` sends the file again; no simulation runs again, and the server gives the same answer for the same result while it has the ticket. The next `env.reset()` drops a result that was not sent: that episode is lost, and the worker goes on. Use one `Env` for each worker.
 
 ## On several machines
 

@@ -149,16 +149,9 @@ def test_a_fault_of_the_server_gives_no_reward_and_the_client_keeps_the_result(s
     with pytest.raises(RuntimeError, match="500.*could not score"):
         env.step("model Room right end Room;")
     assert not (data / "rewards.jsonl").exists() and env.task is None       # the container is gone; the result file is kept
-    pending, calls = env.result_file, len(docker[0])
-    with monkeypatch.context() as blocked:
-        def unexpected_request(*args):
-            pytest.fail("A pending result must block new work before any request")
-        blocked.setattr(env, "_post", unexpected_request)
-        with pytest.raises(RuntimeError, match="pending.*send.*discard_result"):
-            env.reset()
-        with pytest.raises(RuntimeError, match="pending.*send.*discard_result"):
-            env.step("model Room right end Room;")
-    assert env.result_file is pending and len(docker[0]) == calls
+    pending = env.result_file
+    with pytest.raises(RuntimeError, match="reset"):
+        env.step("model Room right end Room;")                  # the episode is over; only send() or reset() goes on
     with pytest.raises(RuntimeError, match="500.*could not score"):
         env.send()
     assert env.result_file is pending
@@ -169,7 +162,7 @@ def test_a_fault_of_the_server_gives_no_reward_and_the_client_keeps_the_result(s
     env.close()
 
 
-def test_explicit_discard_allows_a_new_episode_without_sending_the_old_result(server, docker, monkeypatch):
+def test_reset_drops_a_result_that_was_not_sent_and_the_worker_goes_on(server, docker, monkeypatch):
     url, data = server
     env = fjallstation.Env(url)
     env.reset()
@@ -181,13 +174,12 @@ def test_explicit_discard_allows_a_new_episode_without_sending_the_old_result(se
     monkeypatch.setattr(env, "_post", unavailable)
     with pytest.raises(ConnectionError):
         env.step("model Room right end Room;")
-    old_ticket, calls = env.result_file["ticket"], len(docker[0])
-    env.discard_result()
-    env.discard_result()                                       # no pending result: a harmless no-op
-    assert env.result_file is None and len(docker[0]) == calls
-    assert not (data / "rewards.jsonl").exists()
+    old_ticket = env.result_file["ticket"]
+    with pytest.raises(ConnectionError):
+        env.reset()                                             # the server is still away: no new task
     monkeypatch.setattr(env, "_post", post)
-    env.reset()
+    env.reset()                                                 # no call in between: the lost episode does not stop the loop
+    assert env.result_file is None and not (data / "rewards.jsonl").exists()
     assert env.step("model Room right end Room;").reward == 1.0
     records = [json.loads(line) for line in (data / "rewards.jsonl").read_text().splitlines()]
     assert len(records) == 1 and records[0]["ticket"] != old_ticket
@@ -217,8 +209,6 @@ def test_another_worker_can_finish_while_one_env_has_a_pending_result(server, do
     with ThreadPoolExecutor(max_workers=1) as workers:
         assert workers.submit(other_worker).result(timeout=10).reward == 1.0
     assert waiting.result_file is pending
-    with pytest.raises(RuntimeError, match="pending"):
-        waiting.reset()
     monkeypatch.setattr(waiting, "_post", post)
     assert waiting.send().reward == 1.0
     records = [json.loads(line) for line in (data / "rewards.jsonl").read_text().splitlines()]
@@ -238,10 +228,6 @@ def test_retry_after_a_lost_reply_preserves_the_result_and_does_not_score_twice(
     monkeypatch.setattr(env, "_post", lose_reply)
     with pytest.raises(ConnectionError):
         env.step("model Room right end Room;")
-    pending = env.result_file
-    with pytest.raises(RuntimeError, match="pending"):
-        env.reset()
-    assert env.result_file is pending
     monkeypatch.setattr(env, "_post", post)
     assert env.send().reward == 1.0 and env.result_file is None
     assert len((data / "rewards.jsonl").read_text().splitlines()) == 1

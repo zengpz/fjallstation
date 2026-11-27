@@ -17,8 +17,6 @@ The time limit for one submission is 30 minutes. `time limit` has the value 0.2 
 
 The result CSV must have unique, nonempty column names, including `time`. Each nonblank row must have the same number of fields as the header. Every fixed scoring time must have an actual result row, within one millionth of the output interval. Missing rows are not filled by interpolation. Extra rows at simulation events are allowed; at a repeated timestamp, the last value counts. A malformed table or a missing scoring row gives `simulation failed` and no scorer reward. A run that ends before the stop time keeps `simulation stopped early`.
 
-This rule requires image `fjallstation-env:2`. Run `fjallstation image` to build it before using the updated package. The server rejects results from the older image. Stored reference-table alignment is unchanged.
-
 ## The scorer part
 
 It comes from the server. The server compares each required output with the reference values at the fixed time steps.
