@@ -44,12 +44,20 @@ class StationFull(RuntimeError):
 
 
 def check_task(row: dict, spec: dict, table: dict) -> None:
-    """Raise ValueError when a task cannot be served: settings or reference values that are not complete or not clear."""
+    """Raise ValueError when a task has invalid settings, file definitions or reference values."""
     if not all(isinstance(spec.get(key), list) for key in ("libraries", "hidden_files")) or not isinstance(spec.get("eval"), dict):
         raise ValueError("the settings need msl, libraries, hidden_files and eval")
     if not isinstance(spec["eval"].get("outputs"), list) or not spec["eval"]["outputs"]:
         raise ValueError("the settings name no required output")
     fjallstation_task.check({"model_name": row.get("model_name"), "run": score.run_part(spec)})     # the rules of the image command
+    files = spec.get("files", {})
+    if not isinstance(files, dict):
+        raise ValueError("files must map plain filenames to text")
+    for name, text in files.items():
+        if not isinstance(name, str) or not name or "/" in name or name.startswith(".") or "\0" in name:
+            raise ValueError(f"not a plain file name: {name!r}")
+        if not isinstance(text, str):
+            raise ValueError(f"the contents of file {name!r} must be text")
     ev = spec["eval"]
     outputs, start, stop, interval = ev["outputs"], ev.get("start_time", 0), ev["stop_time"], ev["interval"]
     limit = spec.get("limit", score.LIMIT)
@@ -75,11 +83,11 @@ def load_tasks(store: Path) -> dict:
         for row in pq.read_table(f).to_pylist():
             try:
                 spec, table = json.loads(row["spec"]), json.loads(row["reference_outputs"])
+                if row.get("files"):
+                    spec["files"] = json.loads(row.pop("files"))           # the data files of a task with measured data
                 check_task(row, spec, table)
                 if row["id"] in tasks:
                     raise ValueError("another task has the same id")
-                if row.get("files"):
-                    spec["files"] = json.loads(row.pop("files"))           # the data files of a task with measured data
                 steps = score.time_steps(spec["eval"])            # the scoring needs the fixed time steps only
                 reference = {"time": steps.tolist()} | {n: score.on_steps(table, n, steps).tolist() for n in spec["eval"]["outputs"]}
                 for name, values in reference.items():

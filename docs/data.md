@@ -90,6 +90,7 @@ The server checks each task when it starts, and it names the task and the reason
 - The reference values cover this time in order, and each output has one value for each time.
 - A limit is a number above zero, for the task or for each output.
 - A reference output is not constant, because the error is measured against its range.
+- Task files map plain filenames to text. Names must be nonempty, must not start with a dot, and must not contain `/` or a NUL character. The task creator is responsible for the contents; the server does not parse or validate the datasets inside these files.
 
 ## Tasks of your own
 

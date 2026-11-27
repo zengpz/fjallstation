@@ -374,6 +374,40 @@ def test_a_task_set_with_a_fault_is_refused_with_the_task_and_the_reason(tmp_pat
     assert len(app.load_tasks(store("good"))) == 1
 
 
+@pytest.mark.parametrize("files, reason", [
+    (["not-a-file-map"], "files must map"), ([], "files must map"), (None, "files must map"), (7, "files must map"),
+    ({"../outside.txt": "text"}, "not a plain file name"), ({"/outside.txt": "text"}, "not a plain file name"),
+    ({".hidden": "text"}, "not a plain file name"), ({"": "text"}, "not a plain file name"),
+    ({"bad\0name": "text"}, "not a plain file name"), ({"data.txt": 7}, "must be text"),
+])
+def test_invalid_task_files_fail_loading_with_the_task_path_and_reason(tmp_path, files, reason):
+    folder = tmp_path / "env/tasks"
+    folder.mkdir(parents=True)
+    path = folder / "part-00000.parquet"
+    row = {"id": "t-files", "prompt": "p", "model_name": "Room", "spec": json.dumps(SPEC),
+           "reference_outputs": json.dumps(REF), "files": json.dumps(files)}
+    pq.write_table(pa.Table.from_pylist([row]), path)
+    with pytest.raises(ValueError) as fault:
+        app.load_tasks(tmp_path)
+    assert "Task 't-files'" in str(fault.value) and str(path) in str(fault.value) and reason in str(fault.value)
+
+
+@pytest.mark.parametrize("files", [{}, {"weather.csv": "7", "empty.txt": "", "mätning.txt": "värme\n"}])
+def test_task_file_text_reaches_the_worker_unchanged(tmp_path, files):
+    from fjallstation.image import fjallstation_task as command
+
+    folder = tmp_path / "store/env/tasks"
+    folder.mkdir(parents=True)
+    row = {"id": "t-files", "prompt": "p", "model_name": "Room", "spec": json.dumps({**SPEC, "hidden_files": []}),
+           "reference_outputs": json.dumps(REF), "files": json.dumps(files)}
+    pq.write_table(pa.Table.from_pylist([row]), folder / "part-00000.parquet")
+    station = app.Station(app.load_tasks(tmp_path / "store"), tmp_path / "rewards")
+    task = station.sample("t-files")
+    assert task.get("files", {}) == files
+    command.start(task, task_file=str(tmp_path / "task.json"), data_folder=str(tmp_path / "data"))
+    assert {name: (tmp_path / "data" / name).read_text(encoding="utf-8") for name in files} == files
+
+
 def test_the_server_keeps_a_bounded_number_of_tickets(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "MAX_TICKETS", 3)
     rows = [{"id": "t-1", "prompt": "p", "model_name": "Room", "spec": json.dumps(SPEC), "reference_outputs": json.dumps(REF)}]
