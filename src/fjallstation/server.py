@@ -26,6 +26,7 @@ import re
 import secrets
 import threading
 import time
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -35,7 +36,11 @@ from fjallstation import score
 from fjallstation.image import IMAGE, fjallstation_task
 
 MAX_BODY_BYTES = 50_000_000              # a longer request is refused
-MAX_TICKETS = 200_000                    # the server keeps this number of tickets; the oldest ones go first
+MAX_TICKETS = 200_000                    # active and completed records; only completed tickets can be removed
+
+
+class StationFull(RuntimeError):
+    """No slot for a new episode; all retained tickets are active."""
 
 
 def check_task(row: dict, spec: dict, table: dict) -> None:
@@ -98,6 +103,7 @@ class Station:
         self.data.mkdir(parents=True, exist_ok=True)
         self.random = random.Random(seed)
         self.tickets = {}
+        self.completed = deque()        # tickets in completion order, for constant-time cleanup
         self.lock = threading.Lock()
 
     def sample(self, task_id: str | None = None, address: str = "") -> dict:
@@ -107,10 +113,12 @@ class Station:
                 task_id = self.random.choice(sorted(self.tasks))
             if task_id not in self.tasks:
                 raise KeyError(task_id)
+            while len(self.tickets) >= MAX_TICKETS:
+                if not self.completed:
+                    raise StationFull(f"The server is busy: all {MAX_TICKETS} ticket slots are active. Retry when an episode finishes.")
+                del self.tickets[self.completed.popleft()]
             ticket = secrets.token_hex(12)
             self.tickets[ticket] = {"task": task_id, "state": "open", "at": time.time()}
-            while len(self.tickets) > MAX_TICKETS:
-                del self.tickets[next(iter(self.tickets))]            # the oldest ticket
         task = self.tasks[task_id]
         answer = {"ticket": ticket, "address": address, "task": task_id, "prompt": task["prompt"],
                   "model_name": task["model_name"], "image": self.image, "hidden_files": task["spec"]["hidden_files"],
@@ -148,6 +156,7 @@ class Station:
                 with (self.data / "rewards.jsonl").open("a", encoding="utf-8") as f:
                     f.write(json.dumps(record, ensure_ascii=False) + "\n")
                 entry.update(state="done", mark=mark, answer=answer)
+                self.completed.append(ticket)
         except Exception:
             with self.lock:
                 entry["state"] = "open"                           # a fault of the server does not use up the ticket
@@ -196,6 +205,8 @@ def handler(station: Station):
                 return self.answer(404, {"error": f"Not known: {e.args[0]}"})
             except PermissionError as e:
                 return self.answer(409, {"error": str(e)})
+            except StationFull as e:
+                return self.answer(503, {"error": str(e)})
             except Exception as e:                                # no reward and no record for a fault of the server
                 return self.answer(500, {"error": f"The server could not score the result: {e}"})
             self.answer(404, {"error": "not found"})

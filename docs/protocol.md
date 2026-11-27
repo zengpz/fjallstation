@@ -41,7 +41,7 @@ print(result.reward, result.feedback)    # 1.0 correct
 
 ## If sending a result fails
 
-When `env.step()` finishes the simulation but cannot deliver its result, that `Env` keeps the result in memory. `reset()` and `step()` refuse to start more work until you send or explicitly discard it. After the server recovers, retry delivery with `result = env.send()`; this does not run the simulation again. Repeated delivery of the same result gives the same answer on the server.
+When `env.step()` finishes the simulation but cannot deliver its result, that `Env` keeps the result in memory. `reset()` and `step()` refuse to start more work until you send or explicitly discard it. After the server recovers, retry delivery with `result = env.send()`; this does not run the simulation again. Repeated delivery of the same result gives the same answer while the server retains its ticket.
 
 To deliberately abandon the pending result, call `env.discard_result()`. You can then call `env.reset()` for a new episode. Discarding clears the local result; it does not cancel a server ticket or undo a result already received by the server. `env.close()` removes the container and keeps any pending result.
 
@@ -81,6 +81,10 @@ Stop the processes of the agent before the submission. The container is the oute
 | `POST /v1/results` | the result file | `{"reward", "omc_reward", "status", "task", "image"}` |
 | `GET /v1/health` | | `{"status": "ok", "tasks": <count>, "image"}` |
 
+The server retains up to 200,000 ticket records in memory, counting both active and completed episodes. This is a record limit, not a measure of supported training throughput. When space is needed, it removes the oldest completed record. It keeps open tickets and tickets currently being scored. If all slots are active, a new task request receives HTTP 503 with a clear busy message; existing workers can still submit results. Retry the task request after a slot becomes available.
+
+Removing a completed ticket removes its cached reply, not the saved reward log. A later retry for that removed ticket receives HTTP 404. Active tickets have no automatic expiry, so abandoned episodes can occupy capacity. All tickets are lost on a server restart.
+
 ## The two files
 
 The task file: `ticket`, `address`, `task`, `prompt`, `model_name`, `image`, `hidden_files`, `run` (the settings to try a model) and, for a task with data files, `files`.
@@ -97,5 +101,5 @@ The result file: `ticket`, `address`, `task`, `image`, `status`, `omc_reward`, `
 - Start the server with `fjallstation server --host 0.0.0.0`, and give the clients its address: `fjallstation.Env(url="http://<server>:8040")` or the variable `FJALLSTATION_SERVER`.
 - Each machine that runs containers needs the task image (`fjallstation image`).
 - `fjallstation.Env()` sends the result to the server address that you gave it. The address in the task file is for a program with no configuration; behind a proxy or with HTTPS it is not right.
-- The server has no accounts, no encryption and no limits for requests. Use it on a machine or a network that you trust. It keeps the open tickets in memory, so a restart ends the open episodes.
+- The server has no accounts, no encryption and no request rate limits. Use it on a machine or a network that you trust. It keeps the open tickets in memory, so a restart ends the open episodes.
 - Treat a task set from another person as a program: its settings go into the script that the container runs.

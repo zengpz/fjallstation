@@ -374,14 +374,32 @@ def test_a_task_set_with_a_fault_is_refused_with_the_task_and_the_reason(tmp_pat
     assert len(app.load_tasks(store("good"))) == 1
 
 
-def test_the_server_keeps_a_bounded_number_of_tickets(server, tmp_path, monkeypatch):
+def test_the_server_keeps_a_bounded_number_of_tickets(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "MAX_TICKETS", 3)
     rows = [{"id": "t-1", "prompt": "p", "model_name": "Room", "spec": json.dumps(SPEC), "reference_outputs": json.dumps(REF)}]
     (tmp_path / "s/env/tasks").mkdir(parents=True)
     pq.write_table(pa.Table.from_pylist(rows), tmp_path / "s/env/tasks/part-00000.parquet")
     station = app.Station(app.load_tasks(tmp_path / "s"), tmp_path / "d")
-    tickets = [station.sample()["ticket"] for _ in range(5)]
-    assert list(station.tickets) == tickets[2:]
+    tickets = [station.sample()["ticket"] for _ in range(3)]
+    with pytest.raises(app.StationFull, match="busy"):
+        station.sample()
+    assert list(station.tickets) == tickets
+    station.result({"ticket": tickets[1], "image": station.image, "status": "simulated", "values": {"T": REF["T"]}})
+    new = station.sample()["ticket"]
+    assert list(station.tickets) == [tickets[0], tickets[2], new]
+
+
+def test_a_full_server_returns_busy_and_existing_workers_can_finish(server, docker, monkeypatch):
+    monkeypatch.setattr(app, "MAX_TICKETS", 1)
+    first, other = fjallstation.Env(server[0]), fjallstation.Env(server[0])
+    first.reset()
+    calls = len(docker[0])
+    with pytest.raises(RuntimeError, match="503.*busy"):
+        other.reset()
+    assert other.task is None and len(docker[0]) == calls
+    assert first.step("model Room right end Room;").reward == 1.0
+    other.reset()
+    assert other.step("model Room right end Room;").reward == 1.0
 
 
 def test_the_shell_line_of_a_command_keeps_the_exit_code_cuts_the_output_and_stops_at_the_limit():
